@@ -1,7 +1,7 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/api/(.*)", "dest": "/src/api/index.py" },
+    { "src": "/api/(.*)", "dest": "/run.py" },
     { "src": "/favicon.ico", "dest": "/src/public/favicon.png" },
     { "src": "/chat/?$", "dest": "/src/public/chat/index.html" },
     { "src": "/chat/(.*)", "dest": "/src/public/chat/$1" },
