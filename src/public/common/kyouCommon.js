@@ -90,14 +90,18 @@ export async function loadConversationsIntoSidebar(historyContainer, onConversat
   historyContainer.innerHTML = "";
   try {
     const response = await fetch(CONVERSATIONS_ENDPOINT);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+    }
     const conversations = await response.json();
     conversations.forEach(function renderConversationItem(conversation) {
       appendConversationItem(historyContainer, conversation, onConversationSelect);
     });
   } catch (err) {
+    console.error("Failed to load conversations:", err);
     const errorElement = buildElement("div", "history-error");
-    errorElement.textContent = "履歴の読み込みに失敗";
+    errorElement.textContent = `履歴の読み込みに失敗: ${err.message}`;
     historyContainer.appendChild(errorElement);
   }
 }

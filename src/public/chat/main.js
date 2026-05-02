@@ -246,7 +246,10 @@ async function sendMessageToAPI(messageText) {
         conversation_id: currentConversationId,
       }),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+    }
     const responseData = await response.json();
 
     currentConversationId = responseData.conversation_id;
