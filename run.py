@@ -24,5 +24,4 @@ async def chat(req: ChatRequest):
     return {"reply": f"Pythonからの返信: {req.message}"}
 
 
-FRONTEND_DIR = Path(__file__).parent.parent / "public"
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="static")
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "public", html=True), name="static")
