@@ -1,0 +1,210 @@
+:root {
+  --sidebar-bg:     #0e0e16;
+  --sidebar-text:   #b0b0c8;
+  --sidebar-hover:  #1c1c2c;
+  --sidebar-active: #26263a;
+  --accent:         #7c6ef0;
+  --accent-hover:   #6657d8;
+  --main-bg:        #f8f7f4;
+  --input-bg:       #ffffff;
+  --border:         #e6e2da;
+  --text-primary:   #1a1826;
+  --text-muted:     #8888a0;
+  --r-sm:  8px;
+  --r-md:  14px;
+  --r-lg:  22px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  background: var(--main-bg);
+  color: var(--text-primary);
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ════ Sidebar ════ */
+
+#sidebar {
+  width: 252px;
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 10px;
+  overflow-y: auto;
+  gap: 2px;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px 14px;
+}
+
+.logo-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent), #b06ef0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.logo-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.03em;
+}
+
+.sb-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: none;
+  border: none;
+  color: var(--sidebar-text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.sb-btn:hover { background: var(--sidebar-hover); color: #fff; }
+
+.sb-btn.new {
+  background: var(--sidebar-active);
+  color: #e0e0f0;
+  margin-bottom: 6px;
+}
+.sb-btn.new:hover { background: var(--accent); color: #fff; }
+
+.sb-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.sb-btn:hover .sb-icon,
+.sb-btn.new   .sb-icon { opacity: 1; }
+
+.sb-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #44445a;
+  padding: 10px 10px 3px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  color: var(--sidebar-text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.12s;
+}
+.history-item:hover  { background: var(--sidebar-hover); color: #ddd; }
+.history-item.active { background: var(--sidebar-active); color: #e8e8ff; }
+
+.history-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.history-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-spacer { flex: 1; }
+
+/* ════ Shared input components ════ */
+
+.send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.send-btn:hover   { background: var(--accent-hover); }
+.send-btn:active  { transform: scale(0.91); }
+.send-btn:disabled { background: #d0cfe8; cursor: default; }
+
+.box-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+textarea {
+  border: none;
+  outline: none;
+  font-size: 0.93rem;
+  color: var(--text-primary);
+  background: transparent;
+  resize: none;
+  min-height: 24px;
+  max-height: 140px;
+  line-height: 1.55;
+  font-family: inherit;
+  overflow-y: auto;
+}
+textarea::placeholder { color: #c0bdb8; }
+
+/* ════ Chips ════ */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 580px;
+}
+
+.chip {
+  padding: 7px 15px;
+  border-radius: 99px;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  font-size: 0.81rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(124, 110, 240, 0.04);
+}
