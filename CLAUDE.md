@@ -10,37 +10,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### Backend
+### Backend (local dev)
 
 ```bash
-# Start dev server (from backend/ directory)
+# Start dev server (from backend/ directory) — also serves public/ as static files
 uvicorn main:app --reload
 
-# Run tests
-pytest
-
-# Lint and format
-ruff check .
-ruff format .
+# Or double-click start.bat from the project root
 ```
 
 ### Frontend
 
-Static files — open `frontend/index.html` directly in a browser, or serve via FastAPI's `StaticFiles` mount.
+Static files live in `public/`. In production they are served by Vercel's CDN automatically.
 
 ## Architecture
 
 ```
 kyosist/
-├── backend/        # FastAPI application
-│   ├── main.py     # App entry point, router registration, CORS config
-│   └── ...
-└── frontend/       # Static HTML/CSS/JS
-    ├── index.html
-    └── ...
+├── api/            # Vercel serverless function
+│   └── index.py   # FastAPI app (API routes only)
+├── backend/        # Local dev server
+│   ├── main.py    # FastAPI app + StaticFiles mount for public/
+│   └── requirements.txt
+├── public/         # Static HTML/CSS/JS (served by Vercel CDN or local uvicorn)
+│   ├── index.html
+│   └── main.js
+├── requirements.txt  # For Vercel Python runtime
+├── vercel.json       # Vercel routing config
+└── start.bat         # One-click local launcher (Windows)
 ```
 
-- The backend exposes REST endpoints under `/api/`.
-- The frontend calls these endpoints using the native `fetch()` API.
-- In development, FastAPI runs on `http://localhost:8000`; configure CORS with `CORSMiddleware` to allow requests from the frontend origin.
-- In production, FastAPI serves the `frontend/` directory as static files via `StaticFiles`.
+- REST endpoints are under `/api/`.
+- The frontend calls them via relative URL `/api/chat` (works on both localhost and Vercel).
+- Local dev: `start.bat` → uvicorn on `http://localhost:8000` (serves `public/` + API).
+- Production: Vercel CDN serves `public/`, `api/index.py` handles `/api/*` as serverless function.
