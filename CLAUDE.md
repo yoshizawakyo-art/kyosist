@@ -44,3 +44,31 @@ kyosist/
 - The frontend calls them via relative URL `/api/chat` (works on both localhost and Vercel).
 - Local dev: `start.bat` → uvicorn on `http://localhost:8000` (serves `public/` + API).
 - Production: Vercel CDN serves `public/`, `api/index.py` handles `/api/*` as serverless function.
+
+## Things to Avoid
+- `allow_origins=["*"]` を本番コードに残す（開発中は許容）
+- `api/index.py` と `backend/main.py` を非同期に編集する（両ファイルのルートは常に同期させる）
+- 環境固有の値をハードコードする（env var を使う）
+- ローカル/Vercel の二重デプロイ構造を壊す変更をする
+
+## Verification
+完了宣言の前に必ず実行:
+```bash
+ruff check .
+ruff format --check .
+```
+
+## Action Scope
+自律的に進めてよい操作: `public/`, `api/`, `backend/` 内のファイル編集
+
+必ず確認してから行う操作: git push・デプロイ実行、ファイル削除、依存パッケージの追加・変更
+
+## Behavioral Rules
+- **サブエージェント移譲・最適選択必須**: 委譲できる作業は必ずサブエージェントに移譲し、タスクの性質に応じて最適なサブエージェントタイプを選択する（詳細: `.claude/rules/subagent-selection.md`）
+- **コマンド解説**: コマンド実行許可を求める際は、そのコマンドの目的を必ず日本語で説明する
+- **ラムダ式禁止**: すべての言語でラムダ式・無名関数を使わない（詳細: `.claude/rules/coding-standards.md`）
+- **危険コマンド警告必須**: いかなるモードでも危険なコマンドはユーザへの警告と明示的承認が必須（詳細: `.claude/rules/safety.md`）
+- **完了通知**: タスク完了・承認要求時は音で通知する（Stop hookで自動実行）
+- **TODO化と逐次消化**: 作業着手前に必ず TaskCreate でタスクを細分化し、1つ完了したら TaskUpdate で完了マークしてから次へ進む
+
+詳細ルール: `.claude/rules/` 配下を参照

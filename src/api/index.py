@@ -1,17 +1,12 @@
 import asyncio
 import os
 import uuid
-from pathlib import Path
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from supabase import Client, create_client
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -156,10 +151,3 @@ async def chat(req: ChatRequest) -> ChatResponse:
     await asyncio.to_thread(_touch_conversation, client, conv_id)
 
     return ChatResponse(reply=reply, conversation_id=uuid.UUID(conv_id))
-
-
-app.mount(
-    "/",
-    StaticFiles(directory=Path(__file__).resolve().parent / "src" / "public", html=True),
-    name="static",
-)
