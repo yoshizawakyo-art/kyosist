@@ -1,4 +1,4 @@
-﻿import { buildElement, buildInputBox } from "../common/kyouUtils.js";
+import { buildElement, buildInputBox } from "../common/kyouUtils.js";
 import {
   buildSidebar,
   loadConversationsIntoSidebar,
