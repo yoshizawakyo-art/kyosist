@@ -26,5 +26,8 @@ Thumbs.db
 
 .vercel
 .claude/
+!.claude/rules/
+!.claude/agents/
+!.claude/skills/
 
 .env*.local

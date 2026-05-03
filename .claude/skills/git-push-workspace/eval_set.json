@@ -1,0 +1,82 @@
+[
+  {
+    "query": "実装終わったのでgithubに上げといて",
+    "should_trigger": true
+  },
+  {
+    "query": "feat/agent-logging ブランチ切ってここまでの変更まとめてpushしてPRまで出して",
+    "should_trigger": true
+  },
+  {
+    "query": "今の差分でコミットメッセージ自動生成してmainにpushしていい？",
+    "should_trigger": true
+  },
+  {
+    "query": "api/index.py と src/public/chat/main.js の変更をコミットしてリモートに反映させて",
+    "should_trigger": true
+  },
+  {
+    "query": "git push お願いします",
+    "should_trigger": true
+  },
+  {
+    "query": "ブランチ作って今日の作業内容をgithubに上げてほしい、PR も作って",
+    "should_trigger": true
+  },
+  {
+    "query": "変更を保存してリモートに上げておいて",
+    "should_trigger": true
+  },
+  {
+    "query": "PRを出したい。タイトルと説明はAIが生成していいよ",
+    "should_trigger": true
+  },
+  {
+    "query": "ステージングからコミットまでやってもらえる？ファイルは全部で",
+    "should_trigger": true
+  },
+  {
+    "query": "fix/chat-scroll-bug ブランチでこの修正をコミットして push して",
+    "should_trigger": true
+  },
+  {
+    "query": "最新のmainブランチを取り込みたい、git pull してくれる？",
+    "should_trigger": false
+  },
+  {
+    "query": "さっきのコミットに間違いがあった、前の状態に戻したい",
+    "should_trigger": false
+  },
+  {
+    "query": "git diff で今の変更内容を確認してほしい",
+    "should_trigger": false
+  },
+  {
+    "query": "Vercel にデプロイして本番に反映させて",
+    "should_trigger": false
+  },
+  {
+    "query": "このコードをレビューして品質の問題がないか確認して",
+    "should_trigger": false
+  },
+  {
+    "query": "ruff のエラーが出てるので直して",
+    "should_trigger": false
+  },
+  {
+    "query": "mainとfeature/agent-loggingブランチの差分を見せてほしい",
+    "should_trigger": false
+  },
+  {
+    "query": "作業前にgit stashしておいてほしい",
+    "should_trigger": false
+  },
+  {
+    "query": "コンフリクトが起きてるので解消してほしい",
+    "should_trigger": false
+  },
+  {
+    "query": "git log で最近5件のコミット履歴を見せて",
+    "should_trigger": false
+  }
+]
