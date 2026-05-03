@@ -342,6 +342,7 @@ async function sendAgentMessage(messageText) {
     const decoder = new TextDecoder();
     let buffer = "";
     let sidebarAdded = false;
+    let isDone = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -354,7 +355,10 @@ async function sendAgentMessage(messageText) {
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const raw = line.slice(6).trim();
-        if (raw === "[DONE]") break;
+        if (raw === "[DONE]") {
+          isDone = true;
+          break;
+        }
 
         let step;
         try {
@@ -385,6 +389,7 @@ async function sendAgentMessage(messageText) {
 
         refs.messages.scrollTop = refs.messages.scrollHeight;
       }
+      if (isDone) break;
     }
   } catch (err) {
     appendChatMessage(`エラー: ${err.message}`, "bot");
@@ -428,7 +433,10 @@ async function sendMessageToAPI(messageText) {
       }),
     });
     if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
+      function getFallbackErrorText() {
+        return response.statusText;
+      }
+      const errorText = await response.text().catch(getFallbackErrorText);
       throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
     }
     const responseData = await response.json();
