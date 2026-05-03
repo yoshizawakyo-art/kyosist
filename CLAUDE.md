@@ -88,10 +88,15 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
 - **危険コマンド警告必須**: いかなるモードでも危険なコマンドはユーザへの警告と明示的承認が必須（詳細: `.claude/rules/safety.md`）
 - **完了通知**: タスク完了・承認要求時は音で通知する（Stop hookで自動実行）
 - **TODO化と逐次消化**: 作業着手前に必ず TaskCreate でタスクを細分化し、1つ完了したら TaskUpdate で完了マークしてから次へ進む
+- **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `senior-code-reviewer` を起動してCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
 
 詳細ルール: `.claude/rules/` 配下を参照
 
 ## Development Workflow
-すべての実装・修正タスクは PDCA サイクルで進める:
-Plan（tech-lead-researcher）→ Do（専門エージェント）→ PR → Check（senior-code-reviewer + Playwright）→ Act
+すべての実装・修正タスクは以下の順で自律実行する（指示なしで完遂すること）:
+```
+Do → Check（senior-code-reviewer）→ PR作成（git-push skill）→ PR最終レビュー（/review skill）
+  → 指摘あり: 修正 → 直接push（新規PR不要）→ PR最終レビューに戻る
+  → 指摘なし: マージ（gh pr merge --merge --auto）
+```
 詳細: `.claude/rules/pdca-workflow.md`
