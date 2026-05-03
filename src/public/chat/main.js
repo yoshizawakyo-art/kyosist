@@ -1,4 +1,16 @@
-/**\n * =============================================================================\n * Kyosist AI チャットシステム - フロントエンド UI 実装\n * =============================================================================\n *\n * 【概要】\n * このモジュールは kyosist AI チャットシステムのメインUI実装です。\n * ユーザーとの対話インターフェースを提供し、メッセージの送受信、\n * 会話履歴の管理、画面状態の遷移などを制御します。\n *\n * 【主な機能】\n *   ✓ ウェルカム画面の表示と管理\n *   ✓ チャット画面でのメッセージ送受信\n *   ✓ サイドバーから過去会話の読み込み\n *   ✓ テキストエリアの自動高さ調整\n *   ✓ AI応答のタイピングインジケーター表示\n * /\n\nimport { buildElement, buildInputBox } from \"../common/kyouUtils.js\";\nimport {\n  buildSidebar,\n  loadConversationsIntoSidebar,\n  prependConversationItem,\n} from \"../common/kyouCommon.js\";\n\n// Backend API エンドポイント URL\nconst CHAT_API_ENDPOINT = \"/api/chat\";\n\n// グローバル状態変数: 現在の UI状態を追跡\nlet isSendingMessage      = false;  // API呼び出し中フラグ\nlet isInChatMode          = false;  // チャットモード表示中フラグ\nlet currentConversationId = null;   // 現在の会話ID\nconst refs                = {};     // DOM要素への参照を保持するオブジェクト
+﻿import { buildElement, buildInputBox } from "../common/kyouUtils.js";
+import {
+  buildSidebar,
+  loadConversationsIntoSidebar,
+  prependConversationItem,
+} from "../common/kyouCommon.js";
+
+const CHAT_API_ENDPOINT = "/api/chat";
+
+let isSendingMessage      = false;
+let isInChatMode          = false;
+let currentConversationId = null;
+const refs                = {};
 
 // ── ウェルカム画面の構築 ──
 
