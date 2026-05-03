@@ -26,3 +26,5 @@ Thumbs.db
 
 .vercel
 .claude/
+
+.env*.local

@@ -1,17 +1,4 @@
-import { buildElement, buildInputBox } from "../common/kyouUtils.js";
-import {
-  buildSidebar,
-  loadConversationsIntoSidebar,
-  prependConversationItem,
-} from "../common/kyouCommon.js";
-
-const CHAT_API_ENDPOINT = "/api/chat";
-
-// ── 画面状態 ──
-let isSendingMessage      = false;
-let isInChatMode          = false;
-let currentConversationId = null;
-const refs                = {};
+/**\n * =============================================================================\n * Kyosist AI チャットシステム - フロントエンド UI 実装\n * =============================================================================\n *\n * 【概要】\n * このモジュールは kyosist AI チャットシステムのメインUI実装です。\n * ユーザーとの対話インターフェースを提供し、メッセージの送受信、\n * 会話履歴の管理、画面状態の遷移などを制御します。\n *\n * 【主な機能】\n *   ✓ ウェルカム画面の表示と管理\n *   ✓ チャット画面でのメッセージ送受信\n *   ✓ サイドバーから過去会話の読み込み\n *   ✓ テキストエリアの自動高さ調整\n *   ✓ AI応答のタイピングインジケーター表示\n * /\n\nimport { buildElement, buildInputBox } from \"../common/kyouUtils.js\";\nimport {\n  buildSidebar,\n  loadConversationsIntoSidebar,\n  prependConversationItem,\n} from \"../common/kyouCommon.js\";\n\n// Backend API エンドポイント URL\nconst CHAT_API_ENDPOINT = \"/api/chat\";\n\n// グローバル状態変数: 現在の UI状態を追跡\nlet isSendingMessage      = false;  // API呼び出し中フラグ\nlet isInChatMode          = false;  // チャットモード表示中フラグ\nlet currentConversationId = null;   // 現在の会話ID\nconst refs                = {};     // DOM要素への参照を保持するオブジェクト
 
 // ── ウェルカム画面の構築 ──
 
@@ -44,6 +31,7 @@ function buildWelcomeScreen() {
     { label: "💡 アイデア出し",   text: "アイデアを出してほしい" },
     { label: "🌏 翻訳する",       text: "日本語に翻訳してほしい" },
     { label: "🐛 デバッグ",       text: "バグの原因を調べてほしい" },
+    { label: "🔍 AIニュース調査", text: "最新のAIニュースを調べてNotionに保存して" },
   ];
   const chipsContainer = buildElement("div", "chips");
   SUGGESTION_CHIPS.forEach(function renderSuggestionChip({ label, text }) {
@@ -220,6 +208,182 @@ async function loadConversationMessages(conversationId) {
   }
 }
 
+// ── エージェントモード ──
+
+const AGENT_KEYWORDS = ["調べて", "検索して", "ニュース", "Notionに", "リサーチ", "最新の"];
+
+const AGENT_STEP_CONFIG = {
+  thought:     { icon: "💭", label: "思考" },
+  action:      { icon: "🔧", label: "ツール実行" },
+  observation: { icon: "👁", label: "結果取得" },
+  error:       { icon: "❌", label: "エラー" },
+};
+
+/**
+ * メッセージにエージェントキーワードが含まれるか判定する。
+ *
+ * @param {string} message
+ * @returns {boolean}
+ */
+function shouldUseAgentMode(message) {
+  return AGENT_KEYWORDS.some(function containsKeyword(kw) {
+    return message.includes(kw);
+  });
+}
+
+/**
+ * エージェントの思考プロセスを表示するコンテナ要素を構築して返す。
+ * トグルボタンで展開/折りたたみが可能。
+ *
+ * @returns {HTMLElement}
+ */
+function buildAgentProcessContainer() {
+  const container = buildElement("div", "agent-process");
+
+  const toggle = buildElement("button", "agent-process-toggle");
+  toggle.type = "button";
+  const arrowSpan = buildElement("span", "toggle-arrow");
+  arrowSpan.textContent = "▾";
+  const labelSpan = buildElement("span", "toggle-label");
+  labelSpan.textContent = "思考プロセス（実行中...）";
+  toggle.append(arrowSpan, labelSpan);
+
+  const stepsDiv = buildElement("div", "agent-steps");
+
+  toggle.addEventListener("click", function onToggleClick() {
+    const isHidden = stepsDiv.classList.contains("hidden");
+    stepsDiv.classList.toggle("hidden", !isHidden);
+    toggle.classList.toggle("collapsed", !isHidden);
+  });
+
+  container.append(toggle, stepsDiv);
+  return container;
+}
+
+/**
+ * エージェントのステップをコンテナに追加してトグルラベルを更新する。
+ *
+ * @param {HTMLElement} container - buildAgentProcessContainer() の戻り値
+ * @param {{ type: string, content: string }} step - SSE で受け取ったステップ
+ */
+function appendAgentStep(container, step) {
+  const stepsDiv = container.querySelector(".agent-steps");
+  const config = AGENT_STEP_CONFIG[step.type] || { icon: "•", label: step.type };
+
+  const stepEl = buildElement("div", `agent-step ${step.type}`);
+
+  const iconEl = buildElement("span", "step-icon");
+  iconEl.textContent = config.icon;
+
+  const bodyEl = buildElement("div", "step-body");
+
+  const labelEl = buildElement("span", "step-label");
+  labelEl.textContent = config.label;
+
+  const contentEl = buildElement("p", "step-content");
+  contentEl.textContent = step.content;
+
+  bodyEl.append(labelEl, contentEl);
+  stepEl.append(iconEl, bodyEl);
+  stepsDiv.appendChild(stepEl);
+
+  const toggleLabel = container.querySelector(".toggle-label");
+  if (toggleLabel) {
+    toggleLabel.textContent = `思考プロセス（${stepsDiv.children.length} ステップ）`;
+  }
+}
+
+/**
+ * エージェントモードでメッセージを送信する。
+ * /api/agent/chat に POST して SSE ストリームを読み取り、
+ * 思考ステップをリアルタイムで表示し、最終回答をチャットに追加する。
+ *
+ * @param {string} messageText
+ */
+async function sendAgentMessage(messageText) {
+  isSendingMessage = true;
+  refs.welcomeSend.disabled = true;
+  refs.chatSend.disabled = true;
+
+  const processContainer = buildAgentProcessContainer();
+  refs.messages.appendChild(processContainer);
+  refs.messages.scrollTop = refs.messages.scrollHeight;
+
+  const isNewConversation = currentConversationId === null;
+
+  try {
+    const response = await fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: messageText,
+        conversation_id: currentConversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(function getStatus() { return response.statusText; });
+      throw new Error(`HTTP ${response.status}: ${errText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let sidebarAdded = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") break;
+
+        let step;
+        try {
+          step = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+
+        if (!sidebarAdded && step.conversation_id) {
+          currentConversationId = step.conversation_id;
+          if (isNewConversation) {
+            prependConversationItem(
+              refs.chatHistory,
+              { id: step.conversation_id, title: messageText },
+              loadConversationMessages
+            );
+          }
+          sidebarAdded = true;
+        }
+
+        if (step.type === "answer") {
+          appendChatMessage(step.content, "bot");
+        } else if (step.type === "error") {
+          appendChatMessage(`エージェントエラー: ${step.content}`, "bot");
+        } else {
+          appendAgentStep(processContainer, step);
+        }
+
+        refs.messages.scrollTop = refs.messages.scrollHeight;
+      }
+    }
+  } catch (err) {
+    appendChatMessage(`エラー: ${err.message}`, "bot");
+  } finally {
+    isSendingMessage = false;
+    refs.welcomeSend.disabled = false;
+    refs.chatSend.disabled = false;
+    refs.chatInput.focus();
+  }
+}
+
 // ── APIへのメッセージ送信 ──
 
 /**
@@ -230,6 +394,11 @@ async function loadConversationMessages(conversationId) {
  * @param {string} messageText - 送信するメッセージ本文
  */
 async function sendMessageToAPI(messageText) {
+  if (shouldUseAgentMode(messageText)) {
+    await sendAgentMessage(messageText);
+    return;
+  }
+
   isSendingMessage = true;
   refs.welcomeSend.disabled = true;
   refs.chatSend.disabled    = true;

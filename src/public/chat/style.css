@@ -171,3 +171,78 @@
   --bot-bubble:  #eeecf8;
   --bot-text:    #2a2840;
 }
+
+/* ════ Agent thinking process ════ */
+
+.agent-process {
+  width: 100%;
+  max-width: 68%;
+  margin-left: 38px;
+}
+
+.agent-process-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+.agent-process-toggle:hover { opacity: 1; }
+.agent-process-toggle .toggle-arrow { font-size: 0.7rem; transition: transform 0.2s; }
+.agent-process-toggle.collapsed .toggle-arrow { transform: rotate(-90deg); }
+
+.agent-steps {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 2px solid #e0dcf8;
+  padding-left: 10px;
+}
+.agent-steps.hidden { display: none; }
+
+.agent-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.agent-step.thought     { background: #f0f0ff; }
+.agent-step.action      { background: #f0fff4; }
+.agent-step.observation { background: #fffbf0; }
+.agent-step.error       { background: #fff0f0; }
+
+.step-icon { flex-shrink: 0; font-size: 0.95rem; margin-top: 1px; }
+
+.step-body { flex: 1; min-width: 0; }
+
+.step-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.thought     .step-label { color: #6355c7; }
+.action      .step-label { color: #1e7a4a; }
+.observation .step-label { color: #8a6200; }
+.error       .step-label { color: #c0392b; }
+
+.step-content {
+  margin: 0;
+  color: #444;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

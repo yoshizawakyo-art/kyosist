@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 supabase==2.15.0
 python-dotenv
+groq
+tavily-python
+httpx

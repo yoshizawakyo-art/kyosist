@@ -13,43 +13,59 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Backend (local dev)
 
 ```bash
-# Start dev server (from backend/ directory) — also serves public/ as static files
-uvicorn main:app --reload
+# Start dev server — serves src/public/ as static files + API
+python run.py
 
 # Or double-click start.bat from the project root
 ```
 
-### Frontend
+### Lint / Format
 
-Static files live in `public/`. In production they are served by Vercel's CDN automatically.
+```bash
+ruff check .
+ruff format --check .
+ruff format .   # auto-fix
+```
 
 ## Architecture
 
 ```
 kyosist/
-├── api/            # Vercel serverless function
-│   └── index.py   # FastAPI app (API routes only)
-├── backend/        # Local dev server
-│   ├── main.py    # FastAPI app + StaticFiles mount for public/
-│   └── requirements.txt
-├── public/         # Static HTML/CSS/JS (served by Vercel CDN or local uvicorn)
-│   ├── index.html
-│   └── main.js
-├── requirements.txt  # For Vercel Python runtime
-├── vercel.json       # Vercel routing config
-└── start.bat         # One-click local launcher (Windows)
+├── api/
+│   └── index.py          # Vercel エントリ（src/api/index.py を import するだけ）
+├── src/
+│   ├── api/
+│   │   ├── index.py      # FastAPI アプリ本体（全ルート定義）
+│   │   └── agent_service.py  # AIエージェントサービス層
+│   └── public/           # 静的ファイル（Vercel CDN / ローカル uvicorn）
+│       ├── index.html
+│       ├── favicon.png
+│       ├── common/       # 複数機能で共有するユーティリティ
+│       │   ├── base.css
+│       │   ├── kyouCommon.js
+│       │   └── kyouUtils.js
+│       └── chat/         # チャット機能
+│           ├── index.html
+│           ├── main.js
+│           └── style.css
+├── supabase/             # DB マイグレーション
+├── run.py                # ローカル開発サーバー起動スクリプト
+├── vercel.json           # Vercel ルーティング設定
+└── start.bat             # ワンクリック起動（Windows）
 ```
 
-- REST endpoints are under `/api/`.
-- The frontend calls them via relative URL `/api/chat` (works on both localhost and Vercel).
-- Local dev: `start.bat` → uvicorn on `http://localhost:8000` (serves `public/` + API).
-- Production: Vercel CDN serves `public/`, `api/index.py` handles `/api/*` as serverless function.
+- REST エンドポイントは `/api/` 配下。
+- フロントエンドは相対 URL `/api/...` で呼び出す（ローカル・Vercel 共通）。
+- ローカル: `run.py` → uvicorn（`src/public/` 静的配信 + API）。
+- 本番: Vercel CDN が `src/public/` を配信、`api/index.py`（プロキシ）→ `src/api/index.py` が `/api/*` を処理。
+- 機能固有コードは `src/public/<feature>/`、共有コードは `src/public/common/` に配置。
 
 ## Things to Avoid
 - `allow_origins=["*"]` を本番コードに残す（開発中は許容）
-- `api/index.py` と `backend/main.py` を非同期に編集する（両ファイルのルートは常に同期させる）
+- `api/index.py`（Vercelプロキシ）を直接編集する（実装は `src/api/index.py` に書く）
 - 環境固有の値をハードコードする（env var を使う）
 - ローカル/Vercel の二重デプロイ構造を壊す変更をする
+- `src/public/common/` に Kyosist 固有ロジックを混入する（フレームワーク層として保つ）
 
 ## Verification
 完了宣言の前に必ず実行:
@@ -59,9 +75,11 @@ ruff format --check .
 ```
 
 ## Action Scope
-自律的に進めてよい操作: `public/`, `api/`, `backend/` 内のファイル編集
+自律的に進めてよい操作: `src/public/`, `src/api/` 内のファイル編集
 
-必ず確認してから行う操作: git push・デプロイ実行、ファイル削除、依存パッケージの追加・変更
+必ず確認してから行う操作: デプロイ実行、ファイル削除、依存パッケージの追加・変更
+
+git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-push/SKILL.md` のワークフローに従う
 
 ## Behavioral Rules
 - **サブエージェント移譲・最適選択必須**: 委譲できる作業は必ずサブエージェントに移譲し、タスクの性質に応じて最適なサブエージェントタイプを選択する（詳細: `.claude/rules/subagent-selection.md`）
@@ -72,3 +90,8 @@ ruff format --check .
 - **TODO化と逐次消化**: 作業着手前に必ず TaskCreate でタスクを細分化し、1つ完了したら TaskUpdate で完了マークしてから次へ進む
 
 詳細ルール: `.claude/rules/` 配下を参照
+
+## Development Workflow
+すべての実装・修正タスクは PDCA サイクルで進める:
+Plan（tech-lead-researcher）→ Do（専門エージェント）→ PR → Check（senior-code-reviewer + Playwright）→ Act
+詳細: `.claude/rules/pdca-workflow.md`
