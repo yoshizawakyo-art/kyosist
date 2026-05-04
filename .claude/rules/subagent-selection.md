@@ -10,7 +10,8 @@
 | フロントエンドUI実装 | `frontend-ui-specialist` |
 | DB設計・クエリ最適化 | `db-architect` |
 | インフラ・デプロイ・CI/CD | `infra-devops-engineer` |
-| コードレビュー（品質・設計・セキュリティ） | `senior-code-reviewer` |
+| PDCAワークフロー Checkフェーズ コードレビュー（超厳格） | `pdca-check-reviewer` |
+| コードレビュー（汎用・品質・設計・セキュリティ） | `senior-code-reviewer` |
 | 技術選定・アーキテクチャ比較 | `tech-lead-researcher` |
 | Claude Code/API の使い方 | `claude-code-guide` |
 | 上記に当てはまらない汎用タスク | `general-purpose` |
@@ -29,7 +30,8 @@ LLMは自分の出力を過剰評価する傾向があるため、**生成と評
 |---|---|---|
 | **プランナー** | `Plan` / `tech-lead-researcher` | 俯瞰・タスク分解・計画立案 |
 | **ジェネレーター** | 専門実装エージェント | 計画に基づく成果物の作成 |
-| **エバリューエーター** | `senior-code-reviewer` | 懐疑的な視点での独立検証 |
+| **エバリューエーター（PDCAワークフロー）** | `pdca-check-reviewer` | 超厳格コードレビュー（CHECK OK/NG返却） |
+| **エバリューエーター（汎用）** | `senior-code-reviewer` | 懐疑的な視点での独立検証 |
 
 適用場面:
 - 複雑な実装タスク → Plan で計画 → 専門エージェントで実装 → senior-code-reviewer でレビュー
