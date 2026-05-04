@@ -2,28 +2,46 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import jwt
-from passlib.context import CryptContext
+import bcrypt
+import jwt
 
-from src.api.schemas.auth import TokenResponse
+from .schemas.auth import TokenResponse
 
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _get_jwt_secret_key() -> str:
+    secret_key = os.environ.get("JWT_SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError("JWT_SECRET_KEY is not configured")
+    return secret_key
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except ValueError:
+        return False
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def create_access_token(data: dict[str, Any]) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    secret_key = os.environ["JWT_SECRET_KEY"]
-    return jwt.encode(to_encode, secret_key, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, _get_jwt_secret_key(), algorithm=ALGORITHM)
+
+
+def verify_token(token: str) -> dict[str, Any]:
+    return jwt.decode(token, _get_jwt_secret_key(), algorithms=[ALGORITHM])
 
 
 def authenticate_user(
