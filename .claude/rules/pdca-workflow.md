@@ -6,8 +6,9 @@ globs: ["**/*"]
 >
 > - **コードへの変更は 1 行でも必ず `mcp__codex-cli__ask-codex` で Codex に実行させる。**
 > - **Claude が Edit / Write ツールでコードファイルを直接書き換えることは禁止。**
+> - **コードファイルを対象とした git 操作（`git checkout --`・`git restore`・`git reset HEAD <file>` 等）も同様に Codex に移譲する。「元に戻すだけ」も例外なし。**
 > - backend-specialist / frontend-ui-specialist などのサブエージェントを実装担当に使うのも禁止。
-> - サブエージェントは調査（Explore）・レビュー（senior-code-reviewer）にのみ使用可。
+> - サブエージェントは調査（Explore）・レビュー（pdca-check-reviewer / senior-code-reviewer）にのみ使用可。
 > - Codex が失敗・使用不可の場合はユーザーに報告して指示を仰ぐ。自力で実装に切り替えない。
 
 # 実装ワークフロー（Claude思考 / Codex実装 分業版）
@@ -225,10 +226,22 @@ Plan で確定した方針に従い、実装とローカル検証を行う。
 
 ---
 
-## Phase 3: Check（Claude）
+## Phase 3: Check（Claude + pdca-check-reviewer）
 
 ### 目的
 Codex の実装が、要件・設計・保守性・安全性の観点で妥当かを厳格に判定する。
+
+### 必須: pdca-check-reviewer エージェントの使用
+
+**コードファイル（`.py` / `.js` / `.html` / `.css` / `.json` 等）を変更した場合、必ず `Agent(subagent_type="pdca-check-reviewer")` を起動すること。**
+
+```
+Agent(subagent_type="pdca-check-reviewer", prompt="<変更ファイル一覧と実装内容を渡す>")
+```
+
+- `pdca-check-reviewer` は model: opus を使用する超厳格レビュアー
+- `CHECK OK` が返るまで Phase 4 に進まない
+- `CHECK NG` が返った場合は、指摘事項を Do / Act に差し戻す
 
 ### 観点
 - 要件を満たしているか
@@ -241,7 +254,7 @@ Codex の実装が、要件・設計・保守性・安全性の観点で妥当�
 - 将来の保守コストを不必要に増やしていないか
 
 ### ルール
-- Do と必ず別責務として扱う
+- Do と必ず別責務として扱う（pdca-check-reviewer が Gen/Eval 分離を担保する）
 - レビューは厳格に行い、指摘は可能な限り一度で出し切る
 - 必要に応じて差分・関連箇所・テスト結果を確認する
 - UI変更を含む場合は、必ず画面動作確認を行う
