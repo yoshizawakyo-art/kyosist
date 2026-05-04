@@ -346,10 +346,17 @@ Check を通過した変更を、レビュー可能なPRとして公開する。
 
 ---
 
-## Phase 5: PR最終レビュー（Claude）
+## Phase 5: PR最終レビュー（pdca-check-reviewer）
 
 ### 目的
 PR単位で、最終的にマージ可能かを判断する。
+
+### 実施方法
+**PR最終レビューは必ず pdca-check-reviewer エージェントを使用する**。PR本文・コミット・差分を総合的に審査し、`PR REVIEW OK` または `PR REVIEW NG` を返す。
+
+```
+Agent(subagent_type="pdca-check-reviewer", prompt="PR #<番号>の最終レビュー。PR説明・コミット・差分を以下の観点で審査してください：...")
+```
 
 ### 観点
 - PR説明は正確か
@@ -361,37 +368,32 @@ PR単位で、最終的にマージ可能かを判断する。
 
 ### ルール
 - ここでは コードの中身だけでなく PR 全体の完成度 を見る
-- 指摘があれば Phase 6 に戻す
-- 指摘がなければマージ可能と判断する
-- 必要なら PR本文の修正も指示する
+- pdca-check-reviewer の判定が `PR REVIEW NG` なら Phase 6 に戻す
+- pdca-check-reviewer の判定が `PR REVIEW OK` ならマージ可能と判断する
 - 高リスク変更は、特に影響範囲・障害時対応・運用影響を厳しく確認する
 
-### 出力
-以下のいずれかを明確に返す。
-- `PR REVIEW OK`
-- `PR REVIEW NG`
+### 出力フォーマット
+pdca-check-reviewer が以下のいずれかを返す。
 
-### 出力テンプレート
 ```markdown
-## PR最終レビュー
+## Check
 
 ### 判定
 PR REVIEW OK
-
-### コメント
-- マージ可能
 ```
+
 または
+
 ```markdown
-## PR最終レビュー
+## Check
 
 ### 判定
 PR REVIEW NG
 
 ### 指摘事項
-1. 
-2. 
-3. 
+1. [Critical / High / Medium / Low] 
+2. [Critical / High / Medium / Low] 
+3. [Critical / High / Medium / Low] 
 ```
 
 ---
