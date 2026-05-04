@@ -53,7 +53,18 @@ Final Answer: <ユーザーへの最終的な回答>
 - 最新AIニュースの場合: 英語と日本語で複数回検索して幅広く情報収集する
 - 収集した情報をNotionに書き込む際は各項目に日付・タイトル・概要・URLを含める
 - Notionへの書き込みは研究が完了した後に必ず実行する
+- 登録済みカスタムスキルが利用可能な場合は、適切なタイミングで skill_call を使う
 """
+
+
+def _build_system_prompt(skills: list[dict]) -> str:
+    """スキル一覧を含む動的なシステムプロンプトを生成する。"""
+    if not skills:
+        return SYSTEM_PROMPT
+    skill_lines = "\n".join(
+        f'- skill_call("{s["name"]}", input): {s["description"]}' for s in skills
+    )
+    return SYSTEM_PROMPT + f"\n\n登録済みカスタムスキル:\n{skill_lines}"
 
 
 # ── データ構造 ──────────────────────────────────────────────────
@@ -157,6 +168,36 @@ async def notion_write(title: str, items: list) -> str:
     return f"Notion エラー (HTTP {response.status_code}): {error_msg}"
 
 
+async def skill_call(skill_name: str, input_text: str, skills: list[dict]) -> str:
+    """登録済みスキルをWebhookで呼び出す。"""
+    skill = next((s for s in skills if s["name"] == skill_name), None)
+    if not skill:
+        return f"スキルが見つかりません: {skill_name}"
+
+    method = skill.get("action_method", "POST").upper()
+    url = skill["action_url"]
+    body_template = skill.get("action_body_template", "")
+
+    if body_template:
+        body = body_template.replace("{input}", input_text)
+    else:
+        body = json.dumps({"input": input_text}, ensure_ascii=False)
+
+    async with httpx.AsyncClient(timeout=30.0) as http_client:
+        try:
+            if method == "GET":
+                response = await http_client.get(url, params={"input": input_text})
+            else:
+                response = await http_client.post(
+                    url,
+                    content=body,
+                    headers={"Content-Type": "application/json"},
+                )
+            return f"スキル「{skill_name}」の実行結果 (HTTP {response.status_code}): {response.text[:500]}"
+        except httpx.RequestError as e:
+            return f"スキル「{skill_name}」の実行エラー: {e}"
+
+
 # ── Groq 呼び出し ───────────────────────────────────────────────
 
 
@@ -215,7 +256,7 @@ def _parse_final_answer(text: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
-async def _execute_action(action_text: str) -> tuple[str, str]:
+async def _execute_action(action_text: str, skills: list[dict]) -> tuple[str, str]:
     """アクション文字列を解析してツールを実行する。(tool_name, observation) を返す。"""
     m = re.match(r"^(\w+)\((.*)\)$", action_text.strip(), re.DOTALL)
     if not m:
@@ -239,6 +280,11 @@ async def _execute_action(action_text: str) -> tuple[str, str]:
             return tool_name, "タイトルと項目リストが必要です"
         items = list(args[1]) if isinstance(args[1], (list, tuple)) else [str(args[1])]
         return tool_name, await notion_write(str(args[0]), items)
+
+    if tool_name == "skill_call":
+        if len(args) < 2:
+            return tool_name, "スキル名と入力テキストが必要です"
+        return tool_name, await skill_call(str(args[0]), str(args[1]), skills)
 
     return tool_name, f"未知のツール: {tool_name}"
 
@@ -267,16 +313,18 @@ async def run_agent(
     groq_client: AsyncGroq,
     supabase_client: Client,
     message_id: str,
+    skills: list[dict] | None = None,
 ) -> AsyncGenerator[AgentStep, None]:
     """
     ReAct ループを実行し、各ステップを AsyncGenerator で yield する。
     同時に Supabase の agent_steps テーブルにも永続化する。
     """
+    skills = skills or []
     history: list[str] = [f"User: {user_message}"]
     step_index = 0
 
     for _iteration in range(MAX_ITERATIONS):
-        prompt = SYSTEM_PROMPT + "\n\n" + "\n".join(history)
+        prompt = _build_system_prompt(skills) + "\n\n" + "\n".join(history)
 
         try:
             llm_output = await _call_groq_with_retry(groq_client, prompt)
@@ -324,7 +372,7 @@ async def run_agent(
             )
             yield action_step
 
-            tool_name, observation = await _execute_action(action)
+            tool_name, observation = await _execute_action(action, skills)
 
             obs_step = AgentStep(
                 step_type="observation",
