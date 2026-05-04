@@ -66,13 +66,24 @@ export function buildSidebar(refs) {
   const historyContainer = buildElement("div", null, { id: "chat-history" });
   refs.chatHistory = historyContainer;
 
+  const skillsButton = buildElement("a", "sb-btn", { href: "/skills/", id: "nav-skills" });
+  if (window.location.pathname.startsWith("/skills")) {
+    skillsButton.classList.add("active");
+  }
+  skillsButton.append(
+    buildSidebarIcon(`<circle cx="12" cy="12" r="3"/>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>`),
+    "スキル管理"
+  );
+
   sidebar.append(
     logoRow,
     newChatButton,
     searchButton,
     historyLabel,
     historyContainer,
-    buildElement("div", "sb-spacer")
+    buildElement("div", "sb-spacer"),
+    skillsButton
   );
 
   return sidebar;

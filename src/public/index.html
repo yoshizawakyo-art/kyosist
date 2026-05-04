@@ -2,11 +2,84 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0; url=/chat/">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/png" href="/favicon.png">
-  <title>kyosist</title>
+  <title>Kyosist - AIチャットシステム</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .container {
+      text-align: center;
+      color: white;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+    p {
+      font-size: 1.125rem;
+      margin-bottom: 2rem;
+      opacity: 0.9;
+    }
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    a {
+      padding: 0.75rem 2rem;
+      border-radius: 0.5rem;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 250ms ease-in-out;
+      display: inline-block;
+    }
+    .btn-primary {
+      background-color: white;
+      color: #667eea;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+    }
+    .btn-secondary {
+      border: 2px solid white;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+    }
+  </style>
 </head>
 <body>
-  <script>location.replace("/chat/");</script>
+  <div class="container">
+    <h1>Kyosist</h1>
+    <p>AI チャットシステムへようこそ</p>
+    <div class="button-group">
+      <a href="/auth/login.html" class="btn-primary">ログイン</a>
+      <a href="/chat/index.html" class="btn-secondary">チャットを開く</a>
+    </div>
+  </div>
+  <script>
+    // トークンが存在する場合は直接チャットページにリダイレクト
+    const token = localStorage.getItem('kyosist_token');
+    if (token) {
+      window.location.replace('/chat/index.html');
+    }
+  </script>
 </body>
 </html>
