@@ -226,20 +226,16 @@ Plan で確定した方針に従い、実装とローカル検証を行う。
 
 ---
 
-## Phase 3: Check（Claude + pdca-check-reviewer）
+## Phase 3: Check（Claude + pdca-check-reviewer.md ガイドライン）
 
 ### 目的
 Codex の実装が、要件・設計・保守性・安全性の観点で妥当かを厳格に判定する。
 
-### 必須: pdca-check-reviewer エージェントの使用
+### 必須: pdca-check-reviewer.md ガイドラインに基づくレビュー
 
-**コードファイル（`.py` / `.js` / `.html` / `.css` / `.json` 等）を変更した場合、必ず `Agent(subagent_type="pdca-check-reviewer")` を起動すること。**
+**コードファイル（`.py` / `.js` / `.html` / `.css` / `.json` 等）を変更した場合、必ず `.claude/agents/pdca-check-reviewer.md` に定義されたガイドラインに従って超厳格にレビューすること。**
 
-```
-Agent(subagent_type="pdca-check-reviewer", prompt="<変更ファイル一覧と実装内容を渡す>")
-```
-
-- `pdca-check-reviewer` は model: opus を使用する超厳格レビュアー
+- `.claude/agents/pdca-check-reviewer.md` に定義された 7 つの審査観点すべてを適用する
 - `CHECK OK` が返るまで Phase 4 に進まない
 - `CHECK NG` が返った場合は、指摘事項を Do / Act に差し戻す
 
@@ -346,34 +342,32 @@ Check を通過した変更を、レビュー可能なPRとして公開する。
 
 ---
 
-## Phase 5: PR最終レビュー（pdca-check-reviewer）
+## Phase 5: PR最終レビュー（.claude/agents/pdca-check-reviewer.md ガイドライン）
 
 ### 目的
 PR単位で、最終的にマージ可能かを判断する。
 
 ### 実施方法
-**PR最終レビューは必ず pdca-check-reviewer エージェントを使用する**。PR本文・コミット・差分を総合的に審査し、`PR REVIEW OK` または `PR REVIEW NG` を返す。
+**PR最終レビューは必ず `.claude/agents/pdca-check-reviewer.md` ガイドラインに従って実施する**。PR本文・コミット・差分を総合的に審査し、`PR REVIEW OK` または `PR REVIEW NG` を返す。
 
-```
-Agent(subagent_type="pdca-check-reviewer", prompt="PR #<番号>の最終レビュー。PR説明・コミット・差分を以下の観点で審査してください：...")
-```
-
-### 観点
+### 観点（pdca-check-reviewer.md に準じた厳格審査）
 - PR説明は正確か
 - 差分は適切な大きさか
 - Check 時の指摘は解消済みか
 - 未解決事項やリスクが放置されていないか
 - マージしてよい品質か
 - ロールバック困難な変更に未整理の不安がないか
+- コード品質・セキュリティ・設計の統合判定
 
 ### ルール
 - ここでは コードの中身だけでなく PR 全体の完成度 を見る
-- pdca-check-reviewer の判定が `PR REVIEW NG` なら Phase 6 に戻す
-- pdca-check-reviewer の判定が `PR REVIEW OK` ならマージ可能と判断する
+- pdca-check-reviewer.md ガイドラインの厳格さを維持する
+- 指摘がなければ `PR REVIEW OK` と判定してマージ可能とする
+- 指摘があれば `PR REVIEW NG` と判定して Phase 6 に戻す
 - 高リスク変更は、特に影響範囲・障害時対応・運用影響を厳しく確認する
 
 ### 出力フォーマット
-pdca-check-reviewer が以下のいずれかを返す。
+以下のいずれかを明確に返す。
 
 ```markdown
 ## Check

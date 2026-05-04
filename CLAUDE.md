@@ -94,15 +94,15 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
   - **タスク完了時に必ず TaskUpdate で `status: "completed"` に設定する**（例外なし）
   - 1つのタスクが完了したら、その都度 TaskUpdate でマークしてから次のタスクに進む
   - ユーザーへの報告では、完了したタスクを明記する
-- **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `pdca-check-reviewer` を起動してCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
+- **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `.claude/agents/pdca-check-reviewer.md` ガイドラインに従って超厳格にCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
 
 詳細ルール: `.claude/rules/` 配下を参照
 
 ## Development Workflow
 すべての実装・修正タスクは以下の順で自律実行する（指示なしで完遂すること）:
 ```
-Do → Check（pdca-check-reviewer）→ PR作成（git-push skill）
-  → PR最終レビュー（pdca-check-reviewer）
+Do → Check（.claude/agents/pdca-check-reviewer.md ガイド準拠）→ PR作成（git-push skill）
+  → PR最終レビュー（.claude/agents/pdca-check-reviewer.md ガイド準拠）
   → 指摘あり: 修正 → 直接push（新規PR不要）→ PR最終レビューに戻る
   → 指摘なし: マージ（gh pr merge --merge --auto）
 ```
