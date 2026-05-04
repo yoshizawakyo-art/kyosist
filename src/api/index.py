@@ -37,7 +37,7 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 import jwt
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,9 +54,28 @@ from api.agent_service import build_agent_event, run_agent
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
+
+
+def _get_jwt_secret_key() -> str:
+    secret_key = os.environ.get("JWT_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(
+            status_code=500,
+            detail="JWT secret key is not configured",
+        )
+    return secret_key
+
+
+def _get_cors_allow_origins() -> list[str]:
+    configured_origins = os.environ.get("CORS_ALLOW_ORIGINS", "")
+    origins = [
+        origin.strip()
+        for origin in configured_origins.split(",")
+        if origin.strip()
+    ]
+    return origins or ["http://localhost:8000"]
 
 # FastAPI アプリケーションインスタンスを作成
 app = FastAPI()
@@ -66,12 +85,12 @@ app = FastAPI()
 # ────────────────────────────────────────────────────────────────────────
 # 目的: フロントエンドから異なるオリジン（ドメイン）からのリクエストを許可
 # 設定内容:
-#   - allow_origins=["*"] : すべてのオリジンからのリクエストを許可
+#   - allow_origins: CORS_ALLOW_ORIGINS に指定されたオリジンを許可
 #   - allow_methods=["*"] : すべてのHTTPメソッド(GET,POST,PUT等)を許可
 #   - allow_headers=["*"] : すべてのリクエストヘッダーを許可
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_get_cors_allow_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -186,6 +205,10 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     expires_at: str
     user: AuthUserResponse
+
+
+class LogoutResponse(BaseModel):
+    success: bool
 
 
 class SkillCreate(BaseModel):
@@ -451,6 +474,19 @@ def _fetch_user_by_email(client: Client, email: str) -> Optional[dict]:
     return result.data[0]
 
 
+def _fetch_user_by_id(client: Client, user_id: str) -> Optional[dict]:
+    result = (
+        client.table("users")
+        .select("id,email,created_at,updated_at")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0]
+
+
 def _verify_password(password: str, password_hash: str) -> bool:
     if bcrypt is None:
         raise HTTPException(
@@ -473,7 +509,7 @@ def _create_access_token(user_id: str) -> tuple[str, datetime]:
         "iat": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
     }
-    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, _get_jwt_secret_key(), algorithm=JWT_ALGORITHM)
     return token, expires_at
 
 
@@ -509,6 +545,89 @@ def _insert_session(
             "expires_at": expires_at.isoformat(),
         }
     ).execute()
+
+
+def _fetch_active_session_by_token(client: Client, token: str) -> Optional[dict]:
+    result = (
+        client.table("sessions")
+        .select("*")
+        .eq("token_hash", _token_hash(token))
+        .is_("revoked_at", "null")
+        .gt("expires_at", datetime.now(timezone.utc).isoformat())
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0]
+
+
+def _touch_session(client: Client, session_id: str) -> None:
+    client.table("sessions").update(
+        {"last_seen_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", session_id).execute()
+
+
+def _rotate_session_token(
+    client: Client,
+    session_id: str,
+    token: str,
+    expires_at: datetime,
+    user_agent: Optional[str],
+    ip_address: Optional[str],
+) -> None:
+    client.table("sessions").update(
+        {
+            "token_hash": _token_hash(token),
+            "user_agent": user_agent,
+            "ip_address": ip_address,
+            "expires_at": expires_at.isoformat(),
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", session_id).execute()
+
+
+def _revoke_session(client: Client, session_id: str) -> None:
+    client.table("sessions").update(
+        {"revoked_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", session_id).execute()
+
+
+def _extract_bearer_token(request: Request) -> str:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return token
+
+
+async def get_current_auth_context(request: Request) -> dict:
+    token = _extract_bearer_token(request)
+
+    try:
+        payload = jwt.decode(
+            token, _get_jwt_secret_key(), algorithms=[JWT_ALGORITHM]
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired token"
+        ) from None
+
+    user_id = payload.get("sub")
+    if not isinstance(user_id, str) or not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    client = get_supabase_client()
+    session = await asyncio.to_thread(_fetch_active_session_by_token, client, token)
+    if session is None or session.get("user_id") != user_id:
+        raise HTTPException(status_code=401, detail="Session is invalid or expired")
+
+    user = await asyncio.to_thread(_fetch_user_by_id, client, user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="User no longer exists")
+
+    await asyncio.to_thread(_touch_session, client, session["id"])
+    return {"client": client, "session": session, "token": token, "user": user}
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -818,6 +937,53 @@ async def login(req: LoginRequest, request: Request) -> LoginResponse:
         expires_at=expires_at.isoformat(),
         user=AuthUserResponse(**public_user),
     )
+
+
+@app.get("/api/auth/me", response_model=AuthUserResponse)
+async def get_current_user(
+    auth_context: dict = Depends(get_current_auth_context),
+) -> AuthUserResponse:
+    return AuthUserResponse(**auth_context["user"])
+
+
+@app.post("/api/auth/refresh", response_model=LoginResponse)
+async def refresh_token(
+    request: Request,
+    auth_context: dict = Depends(get_current_auth_context),
+) -> LoginResponse:
+    user = auth_context["user"]
+    session = auth_context["session"]
+    client = auth_context["client"]
+
+    token, expires_at = _create_access_token(user["id"])
+    await asyncio.to_thread(
+        _rotate_session_token,
+        client,
+        session["id"],
+        token,
+        expires_at,
+        request.headers.get("user-agent"),
+        _request_ip_address(request),
+    )
+
+    return LoginResponse(
+        token=token,
+        access_token=token,
+        expires_at=expires_at.isoformat(),
+        user=AuthUserResponse(**user),
+    )
+
+
+@app.post("/api/auth/logout", response_model=LogoutResponse)
+async def logout(
+    auth_context: dict = Depends(get_current_auth_context),
+) -> LogoutResponse:
+    await asyncio.to_thread(
+        _revoke_session,
+        auth_context["client"],
+        auth_context["session"]["id"],
+    )
+    return LogoutResponse(success=True)
 
 
 @app.post("/api/conversations", response_model=ConversationResponse, status_code=201)

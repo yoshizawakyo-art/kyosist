@@ -6,8 +6,9 @@ globs: ["**/*"]
 >
 > - **コードへの変更は 1 行でも必ず `mcp__codex-cli__ask-codex` で Codex に実行させる。**
 > - **Claude が Edit / Write ツールでコードファイルを直接書き換えることは禁止。**
+> - **コードファイルを対象とした git 操作（`git checkout --`・`git restore`・`git reset HEAD <file>` 等）も同様に Codex に移譲する。「元に戻すだけ」も例外なし。**
 > - backend-specialist / frontend-ui-specialist などのサブエージェントを実装担当に使うのも禁止。
-> - サブエージェントは調査（Explore）・レビュー（senior-code-reviewer）にのみ使用可。
+> - サブエージェントは調査（Explore）・レビュー（pdca-check-reviewer / senior-code-reviewer）にのみ使用可。
 > - Codex が失敗・使用不可の場合はユーザーに報告して指示を仰ぐ。自力で実装に切り替えない。
 
 # 実装ワークフロー（Claude思考 / Codex実装 分業版）
@@ -225,10 +226,18 @@ Plan で確定した方針に従い、実装とローカル検証を行う。
 
 ---
 
-## Phase 3: Check（Claude）
+## Phase 3: Check（Claude + pdca-check-reviewer.md ガイドライン）
 
 ### 目的
 Codex の実装が、要件・設計・保守性・安全性の観点で妥当かを厳格に判定する。
+
+### 必須: pdca-check-reviewer.md ガイドラインに基づくレビュー
+
+**コードファイル（`.py` / `.js` / `.html` / `.css` / `.json` 等）を変更した場合、必ず `.claude/agents/pdca-check-reviewer.md` に定義されたガイドラインに従って超厳格にレビューすること。**
+
+- `.claude/agents/pdca-check-reviewer.md` に定義された 7 つの審査観点すべてを適用する
+- `CHECK OK` が返るまで Phase 4 に進まない
+- `CHECK NG` が返った場合は、指摘事項を Do / Act に差し戻す
 
 ### 観点
 - 要件を満たしているか
@@ -241,7 +250,7 @@ Codex の実装が、要件・設計・保守性・安全性の観点で妥当�
 - 将来の保守コストを不必要に増やしていないか
 
 ### ルール
-- Do と必ず別責務として扱う
+- Do と必ず別責務として扱う（pdca-check-reviewer が Gen/Eval 分離を担保する）
 - レビューは厳格に行い、指摘は可能な限り一度で出し切る
 - 必要に応じて差分・関連箇所・テスト結果を確認する
 - UI変更を含む場合は、必ず画面動作確認を行う
@@ -333,52 +342,52 @@ Check を通過した変更を、レビュー可能なPRとして公開する。
 
 ---
 
-## Phase 5: PR最終レビュー（Claude）
+## Phase 5: PR最終レビュー（.claude/agents/pdca-check-reviewer.md ガイドライン）
 
 ### 目的
 PR単位で、最終的にマージ可能かを判断する。
 
-### 観点
+### 実施方法
+**PR最終レビューは必ず `.claude/agents/pdca-check-reviewer.md` ガイドラインに従って実施する**。PR本文・コミット・差分を総合的に審査し、`PR REVIEW OK` または `PR REVIEW NG` を返す。
+
+### 観点（pdca-check-reviewer.md に準じた厳格審査）
 - PR説明は正確か
 - 差分は適切な大きさか
 - Check 時の指摘は解消済みか
 - 未解決事項やリスクが放置されていないか
 - マージしてよい品質か
 - ロールバック困難な変更に未整理の不安がないか
+- コード品質・セキュリティ・設計の統合判定
 
 ### ルール
 - ここでは コードの中身だけでなく PR 全体の完成度 を見る
-- 指摘があれば Phase 6 に戻す
-- 指摘がなければマージ可能と判断する
-- 必要なら PR本文の修正も指示する
+- pdca-check-reviewer.md ガイドラインの厳格さを維持する
+- 指摘がなければ `PR REVIEW OK` と判定してマージ可能とする
+- 指摘があれば `PR REVIEW NG` と判定して Phase 6 に戻す
 - 高リスク変更は、特に影響範囲・障害時対応・運用影響を厳しく確認する
 
-### 出力
+### 出力フォーマット
 以下のいずれかを明確に返す。
-- `PR REVIEW OK`
-- `PR REVIEW NG`
 
-### 出力テンプレート
 ```markdown
-## PR最終レビュー
+## Check
 
 ### 判定
 PR REVIEW OK
-
-### コメント
-- マージ可能
 ```
+
 または
+
 ```markdown
-## PR最終レビュー
+## Check
 
 ### 判定
 PR REVIEW NG
 
 ### 指摘事項
-1. 
-2. 
-3. 
+1. [Critical / High / Medium / Low] 
+2. [Critical / High / Medium / Low] 
+3. [Critical / High / Medium / Low] 
 ```
 
 ---
