@@ -1,0 +1,26 @@
+{
+  "skill_name": "subagent-orchestrator",
+  "evals": [
+    {
+      "id": 1,
+      "name": "explicit_parallel_agents",
+      "prompt": "サブエージェントを2つ呼んで、この不具合の原因調査とテスト追加を並列で進めてください。",
+      "expected_output": "ユーザーが明示しているためサブエージェント計画を作り、explorerとworkerの役割、担当範囲、成果物、メインエージェントがローカルで進める作業を示す。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "no_implicit_subagent",
+      "prompt": "このコードベースを徹底的に調べて、原因を詳しく分析してください。",
+      "expected_output": "サブエージェントの明示依頼がないため、spawn_agentを使わずメインエージェントで調査を進める。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "worker_ownership",
+      "prompt": "複数workerに分けて、バックエンドとフロントエンドの修正を並列実装してください。",
+      "expected_output": "各workerに衝突しない担当ファイルまたは担当モジュールを割り当て、他者の変更を戻さないこと、検証結果を返すことを明記する。",
+      "files": []
+    }
+  ]
+}
