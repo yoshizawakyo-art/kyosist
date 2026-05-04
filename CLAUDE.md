@@ -88,7 +88,12 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
 - **ラムダ式禁止**: すべての言語でラムダ式・無名関数を使わない（詳細: `.claude/rules/coding-standards.md`）
 - **危険コマンド警告必須**: いかなるモードでも危険なコマンドはユーザへの警告と明示的承認が必須（詳細: `.claude/rules/safety.md`）
 - **完了通知**: タスク完了・承認要求時は音で通知する（Stop hookで自動実行）
-- **TODO化と逐次消化**: 作業着手前に必ず TaskCreate でタスクを細分化し、1つ完了したら TaskUpdate で完了マークしてから次へ進む
+- **タスク管理の厳格化**: 
+  - 作業着手前に必ず TaskCreate でタスクを細分化する
+  - 作業開始時に TaskUpdate で `status: "in_progress"` に設定する
+  - **タスク完了時に必ず TaskUpdate で `status: "completed"` に設定する**（例外なし）
+  - 1つのタスクが完了したら、その都度 TaskUpdate でマークしてから次のタスクに進む
+  - ユーザーへの報告では、完了したタスクを明記する
 - **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `senior-code-reviewer` を起動してCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
 
 詳細ルール: `.claude/rules/` 配下を参照
