@@ -25,22 +25,38 @@ Kyosist AI チャットシステム - バックエンドAPI
 """
 
 import asyncio
+import hashlib
+import ipaddress
 import json
 import logging
 import os
+import secrets
 import uuid
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Literal, Optional
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+import jwt
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from supabase import Client, create_client
 
+try:
+    import bcrypt
+except ImportError:  # pragma: no cover - handled at runtime with a clear API error
+    bcrypt = None
+
+from api import automation_service
 from api.agent_service import build_agent_event, run_agent
 
 logger = logging.getLogger(__name__)
+
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 24
 
 # FastAPI アプリケーションインスタンスを作成
 app = FastAPI()
@@ -58,23 +74,6 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
-# ────────────────────────────────────────────────────────────────────────
-# 静的ファイルのマウント（HTML/JS/CSS を提供）
-# ────────────────────────────────────────────────────────────────────────
-# 目的: フロントエンド資産（HTML,JavaScript,CSS）をクライアントに配信
-# 設定内容:
-#   - "/" : ルートパスに マウント
-#   - directory: ../public フォルダを静的資源フォルダとして指定
-#   - html=True : index.html への自動フォールバックを有効化
-#                 （存在しないパスへのアクセスは index.html を返す）
-app.mount(
-    "/",
-    StaticFiles(
-        directory=os.path.join(os.path.dirname(__file__), "..", "public"), html=True
-    ),
-    name="static",
 )
 
 
@@ -169,6 +168,244 @@ class ChatResponse(BaseModel):
     conversation_id: uuid.UUID
 
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+
+
+class AuthUserResponse(BaseModel):
+    id: uuid.UUID
+    email: EmailStr
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class LoginResponse(BaseModel):
+    token: str
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: str
+    user: AuthUserResponse
+
+
+class SkillCreate(BaseModel):
+    """
+    【スキル作成リクエストモデル】
+    POST /api/skills エンドポイントで受け取るデータ構造です。
+
+    属性:
+      name: str
+        → スキルの識別名。エージェントが skill_call(name, ...) で参照する。
+      description: str
+        → スキルの説明。エージェントがどのスキルを使うべきか判断する際に使用。
+      action_url: str
+        → Webhook の呼び出し先 URL。
+      action_method: str
+        → HTTP メソッド。"GET" または "POST"（デフォルト: "POST"）。
+      action_body_template: str
+        → リクエストボディのテンプレート。"{input}" がユーザー入力に置換される。
+    """
+
+    name: str
+    description: str
+    action_url: str
+    action_method: Literal["GET", "POST"] = "POST"
+    action_body_template: str = ""
+
+    @field_validator("action_url")
+    @classmethod
+    def validate_action_url(cls, v: str) -> str:
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                "action_url は http:// または https:// で始まる必要があります"
+            )
+        hostname = parsed.hostname or ""
+        blocked = ("localhost", "127.", "169.254.", "10.", "192.168.", "::1")
+        if any(hostname == b or hostname.startswith(b) for b in blocked):
+            raise ValueError("内部ネットワークへの URL は登録できません")
+        return v
+
+
+class SkillResponse(BaseModel):
+    """
+    【スキルレスポンスモデル】
+    スキル取得・作成エンドポイントが返却するデータ構造です。
+
+    属性:
+      id: str         → スキルの UUID（文字列形式）
+      name: str       → スキル識別名
+      description: str → スキルの説明
+      action_url: str  → Webhook URL
+      action_method: str → HTTP メソッド
+      action_body_template: str → ボディテンプレート
+      created_at: str → 作成日時（ISO 8601 形式）
+    """
+
+    id: str
+    name: str
+    description: str
+    action_url: str
+    action_method: str
+    action_body_template: str
+    created_at: str
+
+
+class SkillAssistantRequest(BaseModel):
+    """AI スキル設計アシスタントへのリクエストモデル。"""
+
+    message: str
+    history: list[dict] = Field(default_factory=list)
+
+
+class SkillAssistantResponse(BaseModel):
+    """AI スキル設計アシスタントのレスポンスモデル。"""
+
+    reply: str
+    draft: Optional[SkillCreate] = None
+
+
+class AutomationTaskCreate(BaseModel):
+    """業務自動化タスク設定の作成リクエスト。"""
+
+    task_name: str = Field(..., min_length=1)
+    target_month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
+    template_path: str = Field(..., min_length=1)
+    output_directory: str = Field(..., min_length=1)
+    output_filename_policy: str = "template_month"
+    blocked_sites: list[str] = Field(default_factory=list)
+    require_login_confirmation: bool = True
+    require_regeneration_approval: bool = True
+
+
+class AutomationTaskResponse(BaseModel):
+    """業務自動化タスク設定のレスポンス。"""
+
+    id: str
+    name: str
+    description: str = ""
+    template_path: Optional[str] = None
+    output_directory: Optional[str] = None
+    filename_policy: dict = Field(default_factory=dict)
+    approval_policy: dict = Field(default_factory=dict)
+    blocked_site_rules: list = Field(default_factory=list)
+    is_active: bool = True
+    created_at: str
+    updated_at: str
+
+
+class AutomationRunCreate(BaseModel):
+    """業務自動化タスク実行の作成リクエスト。"""
+
+    task_id: str
+    target_month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
+    skill_id: Optional[str] = None
+    require_regeneration_approval: bool = True
+    approved_regeneration: bool = False
+
+
+class AutomationRunResponse(BaseModel):
+    """業務自動化タスク実行履歴のレスポンス。"""
+
+    id: str
+    task_id: str
+    skill_id: Optional[str] = None
+    target_month: str
+    status: str
+    current_step_id: Optional[str] = None
+    resume_state_json: dict = Field(default_factory=dict)
+    output_file_path: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class AutomationLogCreate(BaseModel):
+    """業務自動化実行ログの作成リクエスト。"""
+
+    run_id: str
+    level: Literal["debug", "info", "warning", "error"] = "info"
+    message: str = Field(..., min_length=1)
+    user_action_message: Optional[str] = None
+    details_json: dict = Field(default_factory=dict)
+
+
+class AutomationLogResponse(BaseModel):
+    """業務自動化実行ログのレスポンス。"""
+
+    id: str
+    run_id: str
+    step_id: Optional[str] = None
+    level: str
+    message: str
+    user_action_message: Optional[str] = None
+    details_json: dict = Field(default_factory=dict)
+    created_at: str
+
+
+class AutomationSiteCreate(BaseModel):
+    """自動化対象サイトの作成リクエスト。"""
+
+    name: str = Field(..., min_length=1)
+    category: str = "business"
+    base_url: Optional[str] = None
+    allowed_domains: list[str] = Field(default_factory=list)
+    blocked_site_rules: list = Field(default_factory=list)
+
+
+class AutomationSiteResponse(BaseModel):
+    """自動化対象サイトのレスポンス。"""
+
+    id: str
+    name: str
+    category: str
+    base_url: Optional[str] = None
+    allowed_domains: list = Field(default_factory=list)
+    blocked_site_rules: list = Field(default_factory=list)
+    metadata_json: dict = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class SiteCredentialCreate(BaseModel):
+    """サイト認証情報の作成リクエスト。"""
+
+    site_id: str
+    account_identifier: str = Field(..., min_length=1)
+    secret: str = Field(..., min_length=1)
+    metadata_json: dict = Field(default_factory=dict)
+
+
+class SiteCredentialResponse(BaseModel):
+    """サイト認証情報のレスポンス。秘密情報は返さない。"""
+
+    id: str
+    site_id: str
+    account_identifier: str
+    encryption_version: int
+    key_id: str
+    metadata_json: dict = Field(default_factory=dict)
+    last_verified_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class GeneratedFileResponse(BaseModel):
+    """生成ファイル情報のレスポンス。"""
+
+    id: str
+    run_id: str
+    task_id: str
+    target_month: str
+    file_path: str
+    file_name: str
+    template_path: Optional[str] = None
+    file_kind: str = "excel"
+    metadata_json: dict = Field(default_factory=dict)
+    created_at: str
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Supabase クライアント管理
 # ════════════════════════════════════════════════════════════════════════
@@ -199,6 +436,79 @@ def get_supabase_client() -> Client:
 
     # 取得した認証情報でクライアントを生成・返却
     return create_client(url, key)
+
+
+def _fetch_user_by_email(client: Client, email: str) -> Optional[dict]:
+    result = (
+        client.table("users")
+        .select("id,email,password_hash,created_at,updated_at")
+        .eq("email", email)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0]
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    if bcrypt is None:
+        raise HTTPException(
+            status_code=500,
+            detail="bcrypt dependency is not installed",
+        )
+
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+def _create_access_token(user_id: str) -> tuple[str, datetime]:
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    payload = {
+        "sub": user_id,
+        "jti": secrets.token_urlsafe(16),
+        "iat": int(now.timestamp()),
+        "exp": int(expires_at.timestamp()),
+    }
+    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return token, expires_at
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _request_ip_address(request: Request) -> Optional[str]:
+    if request.client is None:
+        return None
+    host = request.client.host
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    return host
+
+
+def _insert_session(
+    client: Client,
+    user_id: str,
+    token: str,
+    expires_at: datetime,
+    user_agent: Optional[str],
+    ip_address: Optional[str],
+) -> None:
+    client.table("sessions").insert(
+        {
+            "user_id": user_id,
+            "token_hash": _token_hash(token),
+            "user_agent": user_agent,
+            "ip_address": ip_address,
+            "expires_at": expires_at.isoformat(),
+        }
+    ).execute()
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -341,11 +651,173 @@ def _touch_conversation(client: Client, conversation_id: str) -> None:
 
 
 # ════════════════════════════════════════════════════════════════════════
+# スキル管理 DB ヘルパー関数
+# ════════════════════════════════════════════════════════════════════════
+
+
+def _fetch_skills(client: Client) -> list[dict]:
+    """
+    【登録済みスキル一覧を取得】
+    skills テーブルから全レコードを作成日時の新しい順で返す。
+
+    引数:
+      client: Client → Supabase クライアントインスタンス
+
+    戻り値:
+      list[dict] : スキルレコードのリスト
+    """
+    result = client.table("skills").select("*").order("created_at", desc=True).execute()
+    return result.data
+
+
+def _insert_skill(client: Client, data: dict) -> dict:
+    """
+    【スキルを新規作成してDBに保存】
+    skills テーブルに1件挿入し、作成されたレコードを返す。
+
+    引数:
+      client: Client → Supabase クライアントインスタンス
+      data: dict     → 挿入するスキルデータ（name, description, action_url 等）
+
+    戻り値:
+      dict : 作成されたスキルレコード
+
+    例外:
+      HTTPException(500) : DB への挿入が失敗した場合
+    """
+    result = client.table("skills").insert(data).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="スキルの作成に失敗しました")
+    return result.data[0]
+
+
+def _delete_skill(client: Client, skill_id: str) -> None:
+    """
+    【スキルをDBから削除】
+    skills テーブルから指定 ID のレコードを削除する。
+
+    引数:
+      client: Client  → Supabase クライアントインスタンス
+      skill_id: str   → 削除対象のスキル UUID（文字列形式）
+
+    戻り値:
+      None（戻り値なし）
+    """
+    client.table("skills").delete().eq("id", skill_id).execute()
+
+
+def _extract_json_object(text: str) -> Optional[dict]:
+    """文字列中から JSON オブジェクトを抽出して返す。"""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        loaded = json.loads(text[start : end + 1])
+        if isinstance(loaded, dict):
+            return loaded
+    except json.JSONDecodeError:
+        return None
+    return None
+
+
+def _build_skill_draft_from_text(message: str) -> Optional[dict]:
+    """フォールバック用: メッセージから簡易スキル下書きを生成する。"""
+    normalized = message.strip()
+    if not normalized:
+        return None
+    return {
+        "name": "new_skill",
+        "description": f"ユーザー依頼: {normalized[:120]}",
+        "action_url": "https://example.com/webhook",
+        "action_method": "POST",
+        "action_body_template": '{"input":"{input}"}',
+    }
+
+
+def _month_to_date(target_month: str) -> str:
+    """HTML month input の YYYY-MM をDB用の月初日へ変換する。"""
+    return f"{target_month}-01"
+
+
+def _task_create_payload(req: AutomationTaskCreate) -> dict:
+    """フロントのタスク設定をDBスキーマに合わせる。"""
+    return {
+        "name": req.task_name,
+        "description": "月次成果物生成タスク",
+        "template_path": req.template_path,
+        "output_directory": req.output_directory,
+        "filename_policy": {
+            "mode": req.output_filename_policy,
+            "confirm_when_unknown": req.output_filename_policy == "confirm_each_time",
+        },
+        "approval_policy": {
+            "login_before_after": req.require_login_confirmation,
+            "regeneration_requires_explicit_approval": (
+                req.require_regeneration_approval
+            ),
+        },
+        "blocked_site_rules": [
+            {"site_name": site} for site in req.blocked_sites if site.strip()
+        ],
+    }
+
+
+def _http_error_from_exception(
+    exc: Exception, fallback_status: int = 500
+) -> HTTPException:
+    """サービス層の例外をAPI向けに変換する。"""
+    return HTTPException(status_code=fallback_status, detail=str(exc))
+
+
+def _credential_public(row: dict) -> dict:
+    """暗号文そのものをAPIレスポンスから落とす。"""
+    public_row = dict(row)
+    public_row.pop("encrypted_secret", None)
+    public_row.pop("encryption_nonce", None)
+    return public_row
+
+
+# ════════════════════════════════════════════════════════════════════════
 # REST API エンドポイント
 # ════════════════════════════════════════════════════════════════════════
 # 注: 各エンドポイントは async 定義されており、非同期処理に対応しています。
 #     asyncio.to_thread() でスレッド内でブロッキング処理を実行することで
 #     他のリクエスト処理をブロックしません。
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(req: LoginRequest, request: Request) -> LoginResponse:
+    client = get_supabase_client()
+    user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    password_ok = await asyncio.to_thread(
+        _verify_password, req.password, user["password_hash"]
+    )
+    if not password_ok:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token, expires_at = _create_access_token(user["id"])
+    await asyncio.to_thread(
+        _insert_session,
+        client,
+        user["id"],
+        token,
+        expires_at,
+        request.headers.get("user-agent"),
+        _request_ip_address(request),
+    )
+
+    public_user = {k: v for k, v in user.items() if k != "password_hash"}
+    return LoginResponse(
+        token=token,
+        access_token=token,
+        expires_at=expires_at.isoformat(),
+        user=AuthUserResponse(**public_user),
+    )
 
 
 @app.post("/api/conversations", response_model=ConversationResponse, status_code=201)
@@ -499,6 +971,434 @@ async def chat(req: ChatRequest) -> ChatResponse:
     return ChatResponse(reply=reply, conversation_id=uuid.UUID(conv_id))
 
 
+@app.get("/api/automation/sites", response_model=list[AutomationSiteResponse])
+async def list_automation_sites() -> list[AutomationSiteResponse]:
+    """自動化対象サイトの一覧を取得する。"""
+    client = get_supabase_client()
+    try:
+        rows = await asyncio.to_thread(automation_service.list_sites, client)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [AutomationSiteResponse(**row) for row in rows]
+
+
+@app.post(
+    "/api/automation/sites",
+    response_model=AutomationSiteResponse,
+    status_code=201,
+)
+async def create_automation_site(
+    req: AutomationSiteCreate,
+) -> AutomationSiteResponse:
+    """自動化対象サイトを登録する。"""
+    client = get_supabase_client()
+    try:
+        row = await asyncio.to_thread(
+            automation_service.create_site,
+            client,
+            {
+                "name": req.name,
+                "category": req.category,
+                "base_url": req.base_url,
+                "allowed_domains": req.allowed_domains,
+                "blocked_site_rules": req.blocked_site_rules,
+            },
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return AutomationSiteResponse(**row)
+
+
+@app.get(
+    "/api/automation/credentials",
+    response_model=list[SiteCredentialResponse],
+)
+async def list_site_credentials(
+    site_id: Optional[str] = None,
+) -> list[SiteCredentialResponse]:
+    """登録済みサイト認証情報を、秘密情報を除いて取得する。"""
+    client = get_supabase_client()
+    filters = {"site_id": site_id} if site_id else None
+    try:
+        rows = await asyncio.to_thread(
+            automation_service.list_credentials, client, filters
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [SiteCredentialResponse(**_credential_public(row)) for row in rows]
+
+
+@app.post(
+    "/api/automation/credentials",
+    response_model=SiteCredentialResponse,
+    status_code=201,
+)
+async def create_site_credential(
+    req: SiteCredentialCreate,
+) -> SiteCredentialResponse:
+    """サイト認証情報を暗号化して保存する。"""
+    client = get_supabase_client()
+    try:
+        row = await asyncio.to_thread(
+            automation_service.create_credential,
+            client,
+            {
+                "site_id": req.site_id,
+                "account_identifier": req.account_identifier,
+                "metadata_json": req.metadata_json,
+            },
+            req.secret,
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return SiteCredentialResponse(**_credential_public(row))
+
+
+@app.get("/api/automation/tasks", response_model=list[AutomationTaskResponse])
+async def list_automation_tasks() -> list[AutomationTaskResponse]:
+    """業務自動化タスク設定の一覧を取得する。"""
+    client = get_supabase_client()
+    try:
+        rows = await asyncio.to_thread(automation_service.list_tasks, client)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [AutomationTaskResponse(**row) for row in rows]
+
+
+@app.post(
+    "/api/automation/tasks",
+    response_model=AutomationTaskResponse,
+    status_code=201,
+)
+async def create_automation_task(
+    req: AutomationTaskCreate,
+) -> AutomationTaskResponse:
+    """業務自動化タスク設定を保存する。"""
+    client = get_supabase_client()
+    payload = _task_create_payload(req)
+    try:
+        row = await asyncio.to_thread(automation_service.create_task, client, payload)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return AutomationTaskResponse(**row)
+
+
+@app.get(
+    "/api/automation/tasks/{task_id}",
+    response_model=AutomationTaskResponse,
+)
+async def get_automation_task(task_id: str) -> AutomationTaskResponse:
+    """業務自動化タスク設定を1件取得する。"""
+    client = get_supabase_client()
+    try:
+        row = await asyncio.to_thread(automation_service.get_task, client, task_id)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="自動化タスクが見つかりません")
+    return AutomationTaskResponse(**row)
+
+
+@app.delete("/api/automation/tasks/{task_id}", status_code=204)
+async def delete_automation_task(task_id: str) -> None:
+    """業務自動化タスク設定を削除する。"""
+    client = get_supabase_client()
+    try:
+        await asyncio.to_thread(automation_service.delete_task, client, task_id)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+
+
+@app.get("/api/automation/runs", response_model=list[AutomationRunResponse])
+async def list_automation_runs(
+    task_id: Optional[str] = None,
+) -> list[AutomationRunResponse]:
+    """業務自動化タスクの実行履歴を取得する。"""
+    client = get_supabase_client()
+    filters = {"task_id": task_id} if task_id else None
+    try:
+        rows = await asyncio.to_thread(automation_service.list_runs, client, filters)
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [AutomationRunResponse(**row) for row in rows]
+
+
+@app.post(
+    "/api/automation/runs",
+    response_model=AutomationRunResponse,
+    status_code=201,
+)
+async def create_automation_run(req: AutomationRunCreate) -> AutomationRunResponse:
+    """業務自動化タスクの実行履歴を開始状態で作成する。"""
+    client = get_supabase_client()
+    target_month = _month_to_date(req.target_month)
+    try:
+        existing = await asyncio.to_thread(
+            automation_service.find_generated_file_for_month,
+            client,
+            req.task_id,
+            target_month,
+        )
+        if (
+            existing
+            and req.require_regeneration_approval
+            and not req.approved_regeneration
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="同月の生成済みファイルがあります。再生成には明示承認が必要です。",
+            )
+        row = await asyncio.to_thread(
+            automation_service.create_run,
+            client,
+            {
+                "task_id": req.task_id,
+                "skill_id": req.skill_id,
+                "target_month": target_month,
+                "status": "queued",
+                "resume_state_json": {
+                    "reason": "created_from_api",
+                    "stop_position": None,
+                },
+            },
+        )
+        await asyncio.to_thread(
+            automation_service.append_run_log,
+            client,
+            row["id"],
+            "info",
+            "実行履歴を作成しました。ブラウザ自動操作の実装後にこの位置から開始します。",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return AutomationRunResponse(**row)
+
+
+@app.get(
+    "/api/automation/runs/{run_id}/logs",
+    response_model=list[AutomationLogResponse],
+)
+async def list_automation_run_logs(run_id: str) -> list[AutomationLogResponse]:
+    """指定実行のログを取得する。チャット画面表示にも使う。"""
+    client = get_supabase_client()
+    try:
+        rows = await asyncio.to_thread(
+            automation_service.list_logs, client, {"run_id": run_id}
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [AutomationLogResponse(**row) for row in rows]
+
+
+@app.post(
+    "/api/automation/logs",
+    response_model=AutomationLogResponse,
+    status_code=201,
+)
+async def create_automation_log(req: AutomationLogCreate) -> AutomationLogResponse:
+    """業務自動化実行ログを追加する。"""
+    client = get_supabase_client()
+    try:
+        row = await asyncio.to_thread(
+            automation_service.create_log,
+            client,
+            {
+                "run_id": req.run_id,
+                "level": req.level,
+                "message": req.message,
+                "user_action_message": req.user_action_message,
+                "details_json": req.details_json,
+            },
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return AutomationLogResponse(**row)
+
+
+@app.get(
+    "/api/automation/generated-files",
+    response_model=list[GeneratedFileResponse],
+)
+async def list_generated_files(
+    task_id: Optional[str] = None,
+    target_month: Optional[str] = None,
+) -> list[GeneratedFileResponse]:
+    """生成済みファイルを取得する。同月再生成の警告判定にも使う。"""
+    client = get_supabase_client()
+    filters = {"task_id": task_id} if task_id else {}
+    if target_month:
+        filters["target_month"] = _month_to_date(target_month)
+    try:
+        rows = await asyncio.to_thread(
+            automation_service.list_generated_files,
+            client,
+            filters or None,
+        )
+    except Exception as exc:
+        raise _http_error_from_exception(exc) from exc
+    return [GeneratedFileResponse(**row) for row in rows]
+
+
+@app.get("/api/skills", response_model=list[SkillResponse])
+async def list_skills() -> list[SkillResponse]:
+    """
+    【GET /api/skills】 登録済みスキル一覧を取得するエンドポイント
+
+    【役割】
+    エージェントUIや管理画面でスキル一覧を表示する際に使用する。
+    登録日時の新しい順で全件返却する。
+
+    【レスポンス】
+    list[SkillResponse]（HTTP 200 OK）
+
+    【例】
+    curl http://localhost:8000/api/skills
+    → [{"id": "...", "name": "my_skill", ...}, ...]
+    """
+    client = get_supabase_client()
+    rows = await asyncio.to_thread(_fetch_skills, client)
+    return [SkillResponse(**r) for r in rows]
+
+
+@app.post("/api/skills", response_model=SkillResponse, status_code=201)
+async def create_skill(req: SkillCreate) -> SkillResponse:
+    """
+    【POST /api/skills】 新規スキルを登録するエンドポイント
+
+    【役割】
+    カスタム Webhook をスキルとして登録し、エージェントから呼び出し可能にする。
+
+    【リクエストボディ】
+    SkillCreate
+    - name: スキルの識別名（必須）
+    - description: スキルの説明（必須）
+    - action_url: Webhook URL（必須）
+    - action_method: HTTP メソッド（省略時 "POST"）
+    - action_body_template: ボディテンプレート（省略時 ""）
+
+    【レスポンス】
+    SkillResponse（HTTP 201 Created）
+
+    【例】
+    curl -X POST http://localhost:8000/api/skills \\
+      -H "Content-Type: application/json" \\
+      -d '{"name": "my_skill", "description": "...", "action_url": "https://..."}'
+    → {"id": "...", "name": "my_skill", ...}
+    """
+    client = get_supabase_client()
+    data = {
+        "name": req.name,
+        "description": req.description,
+        "action_url": req.action_url,
+        "action_method": req.action_method,
+        "action_body_template": req.action_body_template,
+    }
+    row = await asyncio.to_thread(_insert_skill, client, data)
+    return SkillResponse(**row)
+
+
+@app.delete("/api/skills/{skill_id}", status_code=204)
+async def delete_skill(skill_id: str) -> None:
+    """
+    【DELETE /api/skills/{skill_id}】 スキルを削除するエンドポイント
+
+    【役割】
+    登録済みスキルを ID 指定で削除する。
+
+    【パスパラメータ】
+    skill_id : 削除対象のスキル UUID（文字列形式）
+
+    【レスポンス】
+    HTTP 204 No Content（ボディなし）
+
+    【例】
+    curl -X DELETE http://localhost:8000/api/skills/550e8400-e29b-41d4-a716-446655440000
+    → (204 No Content)
+    """
+    client = get_supabase_client()
+    await asyncio.to_thread(_delete_skill, client, skill_id)
+
+
+@app.post("/api/skills/assistant", response_model=SkillAssistantResponse)
+async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
+    """
+    【POST /api/skills/assistant】AI と対話してスキル下書きを作る。
+
+    入力メッセージから、登録フォームにそのまま反映できる draft を返す。
+    """
+    prompt = f"""
+あなたは業務自動化スキル設計アシスタントです。
+ユーザーの要望から webhook スキル案を作成してください。
+
+必ず次の JSON だけを返答してください:
+{{
+  "reply": "ユーザーへの日本語メッセージ",
+  "draft": {{
+    "name": "snake_case_name",
+    "description": "いつ使うスキルか",
+    "action_url": "https://...",
+    "action_method": "GET or POST",
+    "action_body_template": "{{\\"input\\":\\"{{input}}\\"}}"
+  }}
+}}
+
+ルール:
+- URL が不明な場合は draft.action_url を "https://example.com/webhook" にする
+- ユーザー情報が不足していても、必ず暫定 draft を返す
+- draft.name は英数字とアンダースコアのみ
+
+会話履歴:
+{json.dumps(req.history, ensure_ascii=False)}
+
+最新のユーザー入力:
+{req.message}
+""".strip()
+
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    assistant_reply = (
+        "暫定のスキル案を作成しました。内容を確認して必要なら修正してください。"
+    )
+    draft_data = _build_skill_draft_from_text(req.message)
+
+    if groq_key:
+        try:
+            from groq import AsyncGroq
+
+            groq_client = AsyncGroq(api_key=groq_key)
+            result = await groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1024,
+                temperature=0.2,
+            )
+            content = result.choices[0].message.content or ""
+            parsed = _extract_json_object(content)
+            if parsed:
+                assistant_reply = parsed.get("reply") or assistant_reply
+                if isinstance(parsed.get("draft"), dict):
+                    draft_data = parsed["draft"]
+        except Exception as exc:
+            logger.warning("skills assistant fallback: %s", exc)
+
+    if not draft_data:
+        raise HTTPException(status_code=400, detail="メッセージが空です")
+
+    try:
+        draft = SkillCreate(**draft_data)
+    except Exception as exc:
+        logger.warning("skills assistant invalid draft: %s", exc)
+        safe_draft = _build_skill_draft_from_text(req.message)
+        draft = SkillCreate(**safe_draft)
+        assistant_reply = (
+            "入力情報が不足していたため、暫定テンプレートで作成しました。"
+            " URLや説明を調整してから登録してください。"
+        )
+
+    return SkillAssistantResponse(reply=assistant_reply, draft=draft)
+
+
 @app.post("/api/agent/chat")
 async def agent_chat(req: ChatRequest) -> StreamingResponse:
     """
@@ -531,11 +1431,14 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         _insert_message, supabase, conv_id, "user", req.message
     )
     message_id: str = user_msg_row["id"]
+    skills = await asyncio.to_thread(_fetch_skills, supabase)
 
     async def event_stream():
         final_reply = ""
         try:
-            async for step in run_agent(req.message, groq_client, supabase, message_id):
+            async for step in run_agent(
+                req.message, groq_client, supabase, message_id, skills
+            ):
                 yield build_agent_event(step, conv_id)
                 if step.step_type == "answer":
                     final_reply = step.content
@@ -559,3 +1462,10 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# Vercel では静的ファイルは CDN が配信するため、ローカル開発時のみマウントする。
+# VERCEL 環境変数が設定されている場合（Vercel 関数実行環境）はスキップする。
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "public")
+if not os.environ.get("VERCEL") and os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")

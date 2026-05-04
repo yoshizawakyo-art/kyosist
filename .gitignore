@@ -31,3 +31,4 @@ Thumbs.db
 !.claude/skills/
 
 .env*.local
+.worktrees/
