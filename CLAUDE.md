@@ -101,7 +101,8 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
 ## Development Workflow
 すべての実装・修正タスクは以下の順で自律実行する（指示なしで完遂すること）:
 ```
-Do → Check（pdca-check-reviewer）→ PR作成（git-push skill）→ PR最終レビュー（/review skill）
+Do → Check（pdca-check-reviewer）→ PR作成（git-push skill）
+  → PR最終レビュー（pdca-check-reviewer）
   → 指摘あり: 修正 → 直接push（新規PR不要）→ PR最終レビューに戻る
   → 指摘なし: マージ（gh pr merge --merge --auto）
 ```
