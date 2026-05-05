@@ -51,7 +51,11 @@ except ImportError:  # pragma: no cover - handled at runtime with a clear API er
 
 from api import automation_service
 from api.agent_service import build_agent_event, run_agent
-from api.auth_service import hash_password
+from api.auth_service import (
+    generate_password_reset_token,
+    hash_password,
+    hash_reset_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +226,23 @@ class SignupResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     success: bool
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    message: str
 
 
 class SkillCreate(BaseModel):
@@ -512,6 +533,52 @@ def _insert_user(client: Client, email: str, password_hash: str) -> dict:
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create user")
     return result.data[0]
+
+
+def _insert_password_reset_token(
+    client: Client, user_id: str, token_hash: str, expires_at: datetime
+) -> dict:
+    """パスワードリセットトークンを DB に挿入。"""
+    result = (
+        client.table("password_reset_tokens")
+        .insert(
+            {
+                "user_id": user_id,
+                "token": token_hash,
+                "expires_at": expires_at.isoformat(),
+            }
+        )
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create reset token")
+    return result.data[0]
+
+
+def _fetch_password_reset_token(client: Client, token_hash: str) -> Optional[dict]:
+    """トークンハッシュから reset token レコードを取得。"""
+    result = (
+        client.table("password_reset_tokens")
+        .select("id,user_id,expires_at")
+        .eq("token", token_hash)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return result.data[0]
+
+
+def _delete_password_reset_token(client: Client, token_id: str) -> None:
+    """使用済みのリセットトークンを削除。"""
+    client.table("password_reset_tokens").delete().eq("id", token_id).execute()
+
+
+def _update_user_password(client: Client, user_id: str, password_hash: str) -> None:
+    """ユーザーのパスワードを更新。"""
+    client.table("users").update({"password_hash": password_hash}).eq(
+        "id", user_id
+    ).execute()
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
@@ -1046,6 +1113,74 @@ async def signup(req: SignupRequest, request: Request) -> SignupResponse:
         expires_at=expires_at.isoformat(),
         user=AuthUserResponse(**public_user),
     )
+
+
+@app.post("/api/auth/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(req: ForgotPasswordRequest) -> ForgotPasswordResponse:
+    client = get_supabase_client()
+
+    # ユーザー検索（存在しない場合も同じレスポンスでtiming attack防止）
+    user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+    if user is None:
+        return ForgotPasswordResponse(message="メールを確認してください")
+
+    # トークン生成・ハッシュ化
+    token = generate_password_reset_token()
+    token_hash = hash_reset_token(token)
+
+    # 有効期限（1時間）を設定
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+    # DB に保存
+    await asyncio.to_thread(
+        _insert_password_reset_token, client, user["id"], token_hash, expires_at
+    )
+
+    # TODO: Task 1-4b - メール送信処理を実装
+    # await send_reset_email(user["email"], token)
+
+    return ForgotPasswordResponse(message="メールを確認してください")
+
+
+@app.post("/api/auth/reset-password", response_model=ResetPasswordResponse)
+async def reset_password(req: ResetPasswordRequest) -> ResetPasswordResponse:
+    client = get_supabase_client()
+
+    # トークンをハッシュ化して検索
+    token_hash = hash_reset_token(req.token)
+    token_record = await asyncio.to_thread(
+        _fetch_password_reset_token, client, token_hash
+    )
+    if token_record is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    # 有効期限チェック（Supabase TIMESTAMP の解析を堅牢に）
+    expires_at_str = token_record["expires_at"]
+    if expires_at_str.endswith("Z"):
+        expires_at_str = expires_at_str[:-1] + "+00:00"
+    expires_at = datetime.fromisoformat(expires_at_str)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < datetime.now(timezone.utc):
+        await asyncio.to_thread(
+            _delete_password_reset_token, client, token_record["id"]
+        )
+        raise HTTPException(status_code=400, detail="Token expired")
+
+    # パスワード更新
+    new_password_hash = await asyncio.to_thread(hash_password, req.new_password)
+    await asyncio.to_thread(
+        _update_user_password,
+        client,
+        token_record["user_id"],
+        new_password_hash,
+    )
+
+    # 使用済みトークンを削除
+    await asyncio.to_thread(_delete_password_reset_token, client, token_record["id"])
+
+    return ResetPasswordResponse(message="パスワードが更新されました")
 
 
 @app.post("/api/conversations", response_model=ConversationResponse, status_code=201)
