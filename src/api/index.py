@@ -25,7 +25,6 @@ Kyosist AI チャットシステム - バックエンドAPI
 """
 
 import asyncio
-import hashlib
 import ipaddress
 import json
 import logging
@@ -574,6 +573,11 @@ def _delete_password_reset_token(client: Client, token_id: str) -> None:
     client.table("password_reset_tokens").delete().eq("id", token_id).execute()
 
 
+def _delete_password_reset_tokens_by_user(client: Client, user_id: str) -> None:
+    """指定ユーザーの全パスワードリセットトークンを削除。"""
+    client.table("password_reset_tokens").delete().eq("user_id", user_id).execute()
+
+
 def _update_user_password(client: Client, user_id: str, password_hash: str) -> None:
     """ユーザーのパスワードを更新。"""
     client.table("users").update({"password_hash": password_hash}).eq(
@@ -607,10 +611,6 @@ def _create_access_token(user_id: str) -> tuple[str, datetime]:
     return token, expires_at
 
 
-def _token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
 def _request_ip_address(request: Request) -> Optional[str]:
     if request.client is None:
         return None
@@ -633,7 +633,7 @@ def _insert_session(
     client.table("sessions").insert(
         {
             "user_id": user_id,
-            "token_hash": _token_hash(token),
+            "token_hash": hash_reset_token(token),
             "user_agent": user_agent,
             "ip_address": ip_address,
             "expires_at": expires_at.isoformat(),
@@ -645,7 +645,7 @@ def _fetch_active_session_by_token(client: Client, token: str) -> Optional[dict]
     result = (
         client.table("sessions")
         .select("*")
-        .eq("token_hash", _token_hash(token))
+        .eq("token_hash", hash_reset_token(token))
         .is_("revoked_at", "null")
         .gt("expires_at", datetime.now(timezone.utc).isoformat())
         .limit(1)
@@ -672,7 +672,7 @@ def _rotate_session_token(
 ) -> None:
     client.table("sessions").update(
         {
-            "token_hash": _token_hash(token),
+            "token_hash": hash_reset_token(token),
             "user_agent": user_agent,
             "ip_address": ip_address,
             "expires_at": expires_at.isoformat(),
@@ -685,6 +685,13 @@ def _revoke_session(client: Client, session_id: str) -> None:
     client.table("sessions").update(
         {"revoked_at": datetime.now(timezone.utc).isoformat()}
     ).eq("id", session_id).execute()
+
+
+def _revoke_sessions_by_user(client: Client, user_id: str) -> None:
+    """指定ユーザーの全アクティブセッションを失効させる。"""
+    client.table("sessions").update(
+        {"revoked_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("user_id", user_id).is_("revoked_at", "null").execute()
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -1124,6 +1131,9 @@ async def forgot_password(req: ForgotPasswordRequest) -> ForgotPasswordResponse:
     if user is None:
         return ForgotPasswordResponse(message="メールを確認してください")
 
+    # 既存の未使用トークンを全削除（最後の1本のみ有効にする）
+    await asyncio.to_thread(_delete_password_reset_tokens_by_user, client, user["id"])
+
     # トークン生成・ハッシュ化
     token = generate_password_reset_token()
     token_hash = hash_reset_token(token)
@@ -1166,7 +1176,7 @@ async def reset_password(req: ResetPasswordRequest) -> ResetPasswordResponse:
         await asyncio.to_thread(
             _delete_password_reset_token, client, token_record["id"]
         )
-        raise HTTPException(status_code=400, detail="Token expired")
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
 
     # パスワード更新
     new_password_hash = await asyncio.to_thread(hash_password, req.new_password)
@@ -1176,6 +1186,9 @@ async def reset_password(req: ResetPasswordRequest) -> ResetPasswordResponse:
         token_record["user_id"],
         new_password_hash,
     )
+
+    # 全セッションを失効（パスワード変更後の継続アクセスを防止）
+    await asyncio.to_thread(_revoke_sessions_by_user, client, token_record["user_id"])
 
     # 使用済みトークンを削除
     await asyncio.to_thread(_delete_password_reset_token, client, token_record["id"])

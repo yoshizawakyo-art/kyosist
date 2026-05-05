@@ -105,6 +105,11 @@ function redirectToLogin() {
  * @param {string} password - 新しいパスワード
  */
 async function performResetPassword(password) {
+    if (!resetToken) {
+        showApiError('リセットリンクが無効です。もう一度パスワードリセットを行ってください。');
+        return;
+    }
+
     setLoading(true);
     clearApiMessage();
 
