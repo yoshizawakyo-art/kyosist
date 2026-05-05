@@ -1,4 +1,7 @@
+import base64
+import hashlib
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -52,3 +55,14 @@ def authenticate_user(
 
     access_token = create_access_token({"sub": email})
     return TokenResponse(access_token=access_token)
+
+
+def generate_password_reset_token() -> str:
+    """パスワードリセットトークンを生成（base64エンコード）"""
+    token_bytes = secrets.token_bytes(32)
+    return base64.urlsafe_b64encode(token_bytes).decode("utf-8").rstrip("=")
+
+
+def hash_reset_token(token: str) -> str:
+    """リセットトークンを SHA256 でハッシュ化"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
