@@ -7,7 +7,7 @@ const API_BASE_URL = '/api';
 const STORAGE_TOKEN_KEY = 'kyosist_token';
 const STORAGE_USER_KEY = 'kyosist_user';
 
-const loginForm = document.getElementById('loginForm');
+const signupForm = document.getElementById('signupForm');
 const emailInput = document.getElementById('email');
 const passwordInput = document.getElementById('password');
 const submitButton = document.getElementById('submitButton');
@@ -110,7 +110,7 @@ function clearApiError() {
  * フォームをクリアする
  */
 function clearForm() {
-    loginForm.reset();
+    signupForm.reset();
     emailError.textContent = '';
     passwordError.textContent = '';
 }
@@ -236,7 +236,7 @@ function handlePasswordBlur() {
  */
 function init() {
     // フォーム送信イベントをリッスン
-    loginForm.addEventListener('submit', handleSubmit);
+    signupForm.addEventListener('submit', handleSubmit);
 
     // リアルタイムバリデーション
     emailInput.addEventListener('blur', handleEmailBlur);
