@@ -475,11 +475,11 @@ def is_site_blocked(
             or _text_matches(candidate, pattern_text)
             for candidate in normalized_candidates
         ):
-                return {
-                    "blocked": True,
-                    "reason": "site.blocked_site_rules に一致しました",
-                    "matched_rule": pattern,
-                }
+            return {
+                "blocked": True,
+                "reason": "site.blocked_site_rules に一致しました",
+                "matched_rule": pattern,
+            }
 
     allowed_domains = [str(domain) for domain in _as_list(site.get("allowed_domains"))]
     domain_candidates = [
