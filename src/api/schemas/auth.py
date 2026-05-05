@@ -31,3 +31,16 @@ class LogoutResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, description="パスワード（8文字以上）")
+
+
+class SignupResponse(BaseModel):
+    token: str
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: str
+    user: AuthUserResponse
