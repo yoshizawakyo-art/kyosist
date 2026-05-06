@@ -50,7 +50,13 @@ except ImportError:  # pragma: no cover - handled at runtime with a clear API er
     bcrypt = None
 
 from api import automation_service
-from api.agent_service import build_agent_event, run_agent
+from api.agent_service import (
+    build_agent_event,
+    create_gemini_client,
+    generate_gemini_text,
+    run_agent,
+    stream_gemini_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -664,7 +670,9 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
       HTTPException(500) : データベース操作失敗時
     """
     if user_id is None:
-        raise HTTPException(status_code=400, detail="ログイン情報を確認できませんでした")
+        raise HTTPException(
+            status_code=400, detail="ログイン情報を確認できませんでした"
+        )
 
     try:
         result = client.table("conversations").insert({"user_id": user_id}).execute()
@@ -689,7 +697,9 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
 def _fetch_conversations(client: Client, user_id: str | None = None) -> list[dict]:
     """Fetch recent conversations, optionally scoped to a user."""
     if user_id is None:
-        raise HTTPException(status_code=400, detail="ログイン情報を確認できませんでした")
+        raise HTTPException(
+            status_code=400, detail="ログイン情報を確認できませんでした"
+        )
 
     query = client.table("conversations").select("*")
     query = query.eq("user_id", user_id)
@@ -917,6 +927,22 @@ def _build_skill_draft_from_text(message: str) -> Optional[dict]:
     }
 
 
+def _build_chat_prompt(history_rows: list[dict], user_message: str) -> str:
+    """Gemini に渡すチャット履歴プロンプトを組み立てる。"""
+    lines = [
+        "System: You are Kyosist, a concise and helpful AI assistant.",
+        "",
+        "Conversation history:",
+    ]
+    for row in history_rows:
+        role = "Assistant" if row.get("role") == "bot" else "User"
+        content = row.get("content")
+        if content:
+            lines.append(f"{role}: {content}")
+    lines.extend(["", f"User: {user_message}", "Assistant:"])
+    return "\n".join(lines)
+
+
 def _month_to_date(target_month: str) -> str:
     """HTML month input の YYYY-MM をDB用の月初日へ変換する。"""
     return f"{target_month}-01"
@@ -1098,19 +1124,12 @@ async def chat(
     current_user: dict = Depends(get_current_auth_context),
 ) -> StreamingResponse:
     try:
-        from groq import AsyncGroq
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503, detail="groq package is not installed"
-        ) from exc
-
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key:
-        raise HTTPException(status_code=503, detail="GROQ_API_KEY is not configured")
+        gemini_client = create_gemini_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     client = current_user["client"]
     user_id = current_user["user"]["id"]
-    groq_client = AsyncGroq(api_key=groq_key)
 
     if req.conversation_id is None:
         conv_row = await asyncio.to_thread(_insert_conversation, client, user_id)
@@ -1127,33 +1146,16 @@ async def chat(
             raise HTTPException(status_code=404, detail="Conversation not found")
 
     history_rows = await asyncio.to_thread(_fetch_messages, client, conv_id)
-    groq_messages = [
-        {
-            "role": "system",
-            "content": "You are Kyosist, a concise and helpful AI assistant.",
-        }
-    ]
-    for row in history_rows:
-        role = "assistant" if row.get("role") == "bot" else "user"
-        content = row.get("content")
-        if content:
-            groq_messages.append({"role": role, "content": content})
-    groq_messages.append({"role": "user", "content": req.message})
-
-    stream = await groq_client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=groq_messages,
-        temperature=0.7,
-        stream=True,
-    )
+    prompt = _build_chat_prompt(history_rows, req.message)
 
     async def event_stream():
         final_reply = ""
         try:
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
-                if not delta:
-                    continue
+            async for delta in stream_gemini_text(
+                gemini_client,
+                prompt,
+                temperature=0.7,
+            ):
                 final_reply += delta
                 payload = json.dumps({"chunk": delta}, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
@@ -1565,31 +1567,26 @@ async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
 {req.message}
 """.strip()
 
-    groq_key = os.environ.get("GROQ_API_KEY", "")
     assistant_reply = (
         "暫定のスキル案を作成しました。内容を確認して必要なら修正してください。"
     )
     draft_data = _build_skill_draft_from_text(req.message)
 
-    if groq_key:
-        try:
-            from groq import AsyncGroq
-
-            groq_client = AsyncGroq(api_key=groq_key)
-            result = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
-                temperature=0.2,
-            )
-            content = result.choices[0].message.content or ""
-            parsed = _extract_json_object(content)
-            if parsed:
-                assistant_reply = parsed.get("reply") or assistant_reply
-                if isinstance(parsed.get("draft"), dict):
-                    draft_data = parsed["draft"]
-        except Exception as exc:
-            logger.warning("skills assistant fallback: %s", exc)
+    try:
+        gemini_client = create_gemini_client()
+        content = await generate_gemini_text(
+            gemini_client,
+            prompt,
+            temperature=0.2,
+            max_output_tokens=1024,
+        )
+        parsed = _extract_json_object(content)
+        if parsed:
+            assistant_reply = parsed.get("reply") or assistant_reply
+            if isinstance(parsed.get("draft"), dict):
+                draft_data = parsed["draft"]
+    except Exception as exc:
+        logger.warning("skills assistant fallback: %s", exc)
 
     if not draft_data:
         raise HTTPException(status_code=400, detail="メッセージが空です")
@@ -1620,17 +1617,10 @@ async def agent_chat(
     各思考ステップは agent_steps テーブルに記録される。
     """
     try:
-        from groq import AsyncGroq
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503, detail="groq パッケージが未インストールです"
-        ) from exc
+        gemini_client = create_gemini_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key:
-        raise HTTPException(status_code=503, detail="GROQ_API_KEY が設定されていません")
-
-    groq_client = AsyncGroq(api_key=groq_key)
     supabase = current_user["client"]
     user_id = current_user["user"]["id"]
 
@@ -1658,7 +1648,7 @@ async def agent_chat(
         final_reply = ""
         try:
             async for step in run_agent(
-                req.message, groq_client, supabase, message_id, skills
+                req.message, gemini_client, supabase, message_id, skills
             ):
                 yield build_agent_event(step, conv_id)
                 if step.step_type == "answer":
