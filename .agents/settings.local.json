@@ -1,0 +1,70 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(rtk find *)",
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Bash(git config *)",
+      "Bash(git init *)",
+      "Bash(rtk git *)",
+      "Bash(rtk git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(rtk pip *)",
+      "PowerShell(pip *)",
+      "PowerShell(python -m pip --version 2>&1)",
+      "PowerShell(Get-Command *)",
+      "Bash(rtk ruff *)",
+      "PowerShell(& \"C:\\Program Files\\GitHub CLI\\gh.exe\" pr *)",
+      "PowerShell(& \"C:\\Program Files\\GitHub CLI\\gh.exe\" auth status)",
+      "Bash(rtk gh pr create --title 'chore: PR #4 マージ後の保留差分をクリーンアップ' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(rtk read *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk wc *)",
+      "Bash(codex exec *)",
+      "Bash(rtk playwright *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -c \"[System.Media.SystemSounds]::Asterisk.Play(); Start-Sleep -Milliseconds 500\""
+          },
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/credit-handoff-generator.ps1"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/check-reminder.ps1"
+          },
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/credit-handoff-generator.ps1"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/rule-skill-sync-reminder.ps1"
+          }
+        ]
+      }
+    ]
+  }
+}
