@@ -71,11 +71,10 @@ def _get_jwt_secret_key() -> str:
 def _get_cors_allow_origins() -> list[str]:
     configured_origins = os.environ.get("CORS_ALLOW_ORIGINS", "")
     origins = [
-        origin.strip()
-        for origin in configured_origins.split(",")
-        if origin.strip()
+        origin.strip() for origin in configured_origins.split(",") if origin.strip()
     ]
     return origins or ["http://localhost:8000"]
+
 
 # FastAPI アプリケーションインスタンスを作成
 app = FastAPI()
@@ -605,9 +604,7 @@ async def get_current_auth_context(request: Request) -> dict:
     token = _extract_bearer_token(request)
 
     try:
-        payload = jwt.decode(
-            token, _get_jwt_secret_key(), algorithms=[JWT_ALGORITHM]
-        )
+        payload = jwt.decode(token, _get_jwt_secret_key(), algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=401, detail="Invalid or expired token"
