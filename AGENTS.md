@@ -41,8 +41,9 @@ Run Ruff before completing Python changes. Playwright is configured with `baseUR
 - Treat `.claude/doc/pending-tasks.md` as the source of truth for pending and completed work.
 - Before starting continuation work, read `.claude/doc/pending-tasks.md` and use it to decide the next task.
 - After completing implementation, PR review, merge, or branch cleanup, update `.claude/doc/pending-tasks.md` in the same turn.
+- After any user-requested work changes files, verification status, task status, blockers, or next steps, update `.claude/doc/pending-tasks.md` before the final response. This includes small rule/documentation-only changes.
 - Move finished work to a checked `[x]` completed item, include PR number or merge commit when applicable, and leave unfinished or environment-blocked checks as unchecked `[ ]` items with the reason.
-- When adding or updating Codex skills or repository rules, also update the corresponding `.claude/` files when an equivalent Claude-side rule or skill exists or should exist. Keep `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, and Codex skill files behaviorally consistent.
+- When adding or updating Codex skills, repository rules, hooks, or slash commands, also update the corresponding `.claude/` and `.agents/` files when an equivalent Claude-side or agent-side file exists or should exist. Keep `AGENTS.md`, `CLAUDE.md`, `.agents/AGENTS.md`, `.claude/rules/`, `.agents/rules/`, `.claude/skills/`, `.agents/skills/`, `.claude/commands/`, `.agents/commands/`, and Codex skill files behaviorally consistent.
 - Do not send a final completion report until the task ledger has been updated or you have explicitly stated why it could not be updated.
 
 ## Commit & Pull Request Guidelines
