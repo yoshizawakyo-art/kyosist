@@ -36,6 +36,15 @@ JavaScript uses ES modules, `camelCase` variables/functions, `UPPER_SNAKE_CASE` 
 
 Run Ruff before completing Python changes. Playwright is configured with `baseURL: http://localhost:8000`, so start `python run.py` before local browser tests. Name Playwright specs `*.spec.ts` under `my-playwright-project/tests/`. Prefer tests that exercise the local Kyosist app rather than external sites.
 
+## Task Ledger & Completion Rules
+
+- Treat `.claude/doc/pending-tasks.md` as the source of truth for pending and completed work.
+- Before starting continuation work, read `.claude/doc/pending-tasks.md` and use it to decide the next task.
+- After completing implementation, PR review, merge, or branch cleanup, update `.claude/doc/pending-tasks.md` in the same turn.
+- Move finished work to a checked `[x]` completed item, include PR number or merge commit when applicable, and leave unfinished or environment-blocked checks as unchecked `[ ]` items with the reason.
+- When adding or updating Codex skills or repository rules, also update the corresponding `.claude/` files when an equivalent Claude-side rule or skill exists or should exist. Keep `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, and Codex skill files behaviorally consistent.
+- Do not send a final completion report until the task ledger has been updated or you have explicitly stated why it could not be updated.
+
 ## Commit & Pull Request Guidelines
 
 Recent history uses concise conventional prefixes such as `fix:`, `feat:`, and `chore:`; continue that pattern and write the subject in the project language used by the change. Keep commits focused.
