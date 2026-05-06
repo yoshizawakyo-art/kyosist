@@ -97,12 +97,26 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
 - **Task Ledger更新必須**:
   - 継続作業の開始時は `.claude/doc/pending-tasks.md` を読む
   - 実装・PR更新・マージ・ブランチ削除・検証結果など、タスク状態が変わったら同じターンで `.claude/doc/pending-tasks.md` を更新する
+  - ファイル変更・検証結果・タスク状態・ブロッカー・次ステップが変わる作業後は、ルール/ドキュメントのみの小変更でも、最終応答前に必ず `.claude/doc/pending-tasks.md` を更新する
   - 完了作業は `[x]`、未実行・環境制約・保留事項は `[ ]` と理由つきで記入する
   - `.claude/doc/pending-tasks.md` 更新前に完了宣言しない
-- **ルール / Skill 整合性必須**:
-  - Codex 側の skill やルールを追加・更新した場合、対応する `.claude/skills/`・`.claude/rules/`・`CLAUDE.md` も同じターンで確認し、必要な同期更新を行う
-  - Claude 側のルールを追加・更新した場合も、`AGENTS.md` や Codex skill 側に反映すべき内容がないか確認する
-  - 同期しない場合は、理由を `.claude/doc/pending-tasks.md` または最終報告に明記する
+- **ルール / Skill 整合性必須** (Codex ↔ Claude 双方向同期):
+  - Claude 側でルール・スキル・フックを追加・更新した場合：
+    - `.claude/` 配下のファイル更新
+    - **必ず** `.agents/` 配下の対応ファイルも同じターンで更新
+    - `.agents/AGENTS.md` にも変更を反映（ルール一覧・実行フロー）
+  - Codex 側の skill やルールを追加・更新した場合：
+    - `.agents/` 配下の対応ファイル更新
+    - **必ず** `.claude/` 配下の対応ファイルも同じターンで確認・更新
+    - `CLAUDE.md` のルール記載を同期
+  - 同期対象なしまたは意図的に非同期にする場合：
+    - 理由を `.claude/doc/pending-tasks.md` または最終報告に明記
+  - **同期チェックリスト**（新規追加時）:
+    - ファイル作成: `.claude/` と `.agents/` 両方に
+    - Skill 作成: `.claude/skills/` と `.agents/skills/` 両方に
+    - Slash command 作成: `.claude/commands/` と `.agents/commands/` 両方に
+    - フック登録: `.claude/settings.local.json` と `.agents/settings.local.json` 両方に
+    - ドキュメント：`CLAUDE.md` と `.agents/AGENTS.md` 両方に記載
 - **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `.claude/agents/pdca-check-reviewer.md` ガイドラインに従って超厳格にCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
 
 詳細ルール: `.claude/rules/` 配下を参照
@@ -116,3 +130,32 @@ Do → Check（.claude/agents/pdca-check-reviewer.md ガイド準拠）→ PR作
   → 指摘なし: マージ（gh pr merge --merge --auto）
 ```
 詳細: `.claude/rules/pdca-workflow.md`
+
+## クレジット残量 5% 未満時の引き継ぎ対応
+
+**自動実行ルール**: クレジット残量が 5% 未満に低下した時点で、以下を自律実行する：
+
+1. **引き継ぎドキュメント作成**
+   - ファイル名: `.claude/doc/session-handoffs/session-handoff-<YYYY-MM-DD>.md`
+   - 内容: 現在の実装状況・CHECK フェーズ結果・修正が必要な指摘・次のセッションでの作業フロー・参考コマンド
+   - タイミング: クレジット 5% 未満を検知した直後
+
+2. **記載すべき内容**
+   - セッション終了日時
+   - 完了フェーズ（Task 1/2/3 の進捗）
+   - Modified ファイル一覧
+   - テスト結果（Playwright / ruff）
+   - CHECK / CHECK NG の指摘内容と修正手順
+   - 次のセッションでの作業コマンド
+   - 完了条件（Definition of Done）
+   - 参考情報（前セッション完了事項・注意点）
+
+3. **ユーザーへの報告**
+   - 引き継ぎドキュメント作成完了を通知
+   - 修正内容と修正コマンドを簡潔に要約
+   - 新しいセッションでの開始指針を提示
+
+4. **禁止事項**
+   - クレジット 5% で修正を途中まま進めない
+   - 修正コマンドを実行して不完全に終わらない
+   - CHECK フェーズの指摘を放置したままセッションを終了しない
