@@ -186,6 +186,10 @@
 - [x] Validation: `python3 -m json.tool .agents/settings.local.json` and `.claude/settings.local.json` → PASS.
 - [x] Validation: `git diff --check -- .gitignore .agents/settings.local.json .agents/AGENTS.md .claude/commands/harness.md .agents/commands/harness.md .claude/hooks .claude/doc/pending-tasks.md` → PASS.
 - [x] Remaining note: `.agents/` counterparts are still largely untracked because the repository previously carried `.agents/` as local harness state; commit/PR scope should separate harness files from unrelated application diffs.
+- [x] Created branch `codex/harness-slash-command-sync`.
+- [x] Created commit `d7e3349` (`chore: harness slash command and hook sync`) with only harness-related staged files.
+- [x] Pushed branch `codex/harness-slash-command-sync` to origin.
+- [x] Created draft PR #8: https://github.com/yoshizawakyo-art/kyosist/pull/8.
 
 ---
 
