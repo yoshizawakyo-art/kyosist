@@ -10,8 +10,8 @@
 | フロントエンドUI実装 | `frontend-ui-specialist` |
 | DB設計・クエリ最適化 | `db-architect` |
 | インフラ・デプロイ・CI/CD | `infra-devops-engineer` |
-| PDCAのCheckフェーズ（実装後レビュー） | `pdca-check-reviewer` |
-| コードレビュー（アドホック・品質確認） | `senior-code-reviewer` |
+| PDCAワークフロー Checkフェーズ コードレビュー（超厳格） | `pdca-check-reviewer` |
+| コードレビュー（汎用・品質・設計・セキュリティ） | `senior-code-reviewer` |
 | 技術選定・アーキテクチャ比較 | `tech-lead-researcher` |
 | Claude Code/API の使い方 | `claude-code-guide` |
 | 上記に当てはまらない汎用タスク | `general-purpose` |

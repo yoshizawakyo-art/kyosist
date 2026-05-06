@@ -34,7 +34,6 @@ globs: ["**/*"]
   → PR最終レビュー（Claude）
   → (指摘あり: Act（Codexで修正）→ 同一PRへ直接push → PR最終レビューに戻る)
   → (OK: マージ)
-  → Task Ledger 更新（pending-tasks.md）
 
 軽微修正フロー（1〜5行・設定 / 文書のみ）:
   Do（Codex）
@@ -43,10 +42,9 @@ globs: ["**/*"]
   → PR最終レビュー（Claude）
   → (指摘あり: Act（Codexで修正）→ 同一PRへ直接push → PR最終レビューに戻る)
   → (OK: マージ)
-  → Task Ledger 更新（pending-tasks.md）
   ※ UI変更がない場合のみ Playwright は省略可
 
-変更規模にかかわらず、Check → PR作成 → PR最終レビュー → マージ → Task Ledger 更新 の順序は必ず守る。
+変更規模にかかわらず、Check → PR作成 → PR最終レビュー → マージ の順序は必ず守る。
 ```
 
 ---
@@ -228,14 +226,10 @@ Plan で確定した方針に従い、実装とローカル検証を行う。
 
 ---
 
-## Phase 3: Check（`pdca-check-reviewer` サブエージェント）
-
-> **必須**: このフェーズは必ず `Agent(subagent_type="pdca-check-reviewer")` を使って実行する。
-> Claude が自分で Check を行うことは Gen/Eval 分離の原則に反するため禁止。
+## Phase 3: Check（Claude + pdca-check-reviewer.md ガイドライン）
 
 ### 目的
 Codex の実装が、要件・設計・保守性・安全性の観点で妥当かを厳格に判定する。
-`pdca-check-reviewer` は実装担当（Codex）とは独立した立場で超厳格なレビューを行う。
 
 ### 必須: pdca-check-reviewer.md ガイドラインに基づくレビュー
 
@@ -454,22 +448,7 @@ git push
 - PR最終レビューを通過している
 - レビュー指摘が解消されている
 - PR説明が最新状態に更新されている
-- `.claude/doc/pending-tasks.md` が最新状態に更新され、完了作業は `[x]`、未完了・環境制約は `[ ]` と理由つきで残されている
 - 未解決事項がある場合、それが明示され、かつマージ判断に耐える状態である
-
----
-
-## Task Ledger 更新条件
-マージ、PR更新、ブランチ削除、ローカル検証、環境制約の判明など、タスク状態が変わったら必ず `.claude/doc/pending-tasks.md` を更新する。
-
-記入ルール:
-- 完了した作業は `## ✅ 完了済み` に `[x]` で移動または追記する
-- PR を扱った場合は PR 番号、URL、merge commit、CI 状態を残す
-- 未実行チェックは完了扱いにせず、`## 🔲 未完了・引き継ぎ事項` に理由つきで `[ ]` として残す
-- PR に含めなかったローカル差分は、作業ツリー上の未処理として明示する
-- skill やルールを追加・更新した場合は、Codex 側と `.claude` 側の対応ファイルを確認し、必要な同期更新を行ったかを記録する
-- 同期対象がない、または意図的に同期しない場合は、その理由を記録する
-- 最終応答の前に `pending-tasks.md` 更新済みであることを確認する
 
 ---
 
@@ -590,7 +569,6 @@ cd my-playwright-project && npx playwright test --headed
 - 未解決事項を隠したままマージ判断に進む
 - Check を経ずにタスク完了を宣言する
 - PR最終レビュー通過前にマージする
-- `.claude/doc/pending-tasks.md` を更新しないまま完了宣言する
 
 ---
 
