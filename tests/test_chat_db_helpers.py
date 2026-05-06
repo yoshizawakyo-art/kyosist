@@ -10,6 +10,7 @@ from fastapi import HTTPException
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from api.index import (
+    CHAT_SYSTEM_PROMPT,
     _build_chat_prompt,
     _fetch_conversations,
     _fetch_messages,
@@ -155,6 +156,13 @@ class ChatDbHelperTests(unittest.TestCase):
         self.assertIn("User: こんにちは", prompt)
         self.assertIn("Assistant: どうしましたか？", prompt)
         self.assertTrue(prompt.endswith("Assistant:"))
+
+    def test_chat_prompt_uses_japanese_kyosist_character_prompt(self):
+        prompt = _build_chat_prompt([], "自己紹介して")
+
+        self.assertIn("あなたは「Kyosist（キョシスト）」", CHAT_SYSTEM_PROMPT)
+        self.assertIn("常に日本語で応答する", prompt)
+        self.assertIn("確認が必要です", prompt)
 
     def test_chat_prompt_limits_context_to_latest_30_messages(self):
         history = [

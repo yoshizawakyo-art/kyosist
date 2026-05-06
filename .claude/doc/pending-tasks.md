@@ -218,6 +218,16 @@
 - [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
 - [x] Verification: `ruff.exe format --check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
 
+## Completed Updates 2026-05-06 (Issue #13 / PR #24)
+- [x] Implemented GitHub Issue #13 via PR #24: changed the chat system prompt to Japanese and added Kyosist character guidance.
+- [x] Added `CHAT_SYSTEM_PROMPT` in `src/api/index.py` with rules for Japanese responses, concise wording, supportive tone, practical assistance domains, and uncertainty handling.
+- [x] Updated `_build_chat_prompt()` to use the Japanese Kyosist system prompt.
+- [x] Added a regression test confirming the prompt contains the Kyosist identity, Japanese response rule, and uncertainty guidance.
+- [x] Verification: `python.exe -m unittest tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `python.exe -m py_compile run.py src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe format --check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+
 ## Completed Updates 2026-05-06 (Harness Audit Follow-up)
 - [x] Ran `$harness` audit after command setup and confirmed the remaining high-impact issue: `.gitignore` still hid `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` from Git visibility.
 - [x] Updated `.gitignore` to keep `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` visible while keeping session handoffs and other `.claude/doc/*` artifacts ignored.
