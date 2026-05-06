@@ -54,6 +54,7 @@ from api.auth_service import (
     generate_password_reset_token,
     hash_password,
     hash_reset_token,
+    send_password_reset_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -1146,8 +1147,13 @@ async def forgot_password(req: ForgotPasswordRequest) -> ForgotPasswordResponse:
         _insert_password_reset_token, client, user["id"], token_hash, expires_at
     )
 
-    # TODO: Task 1-4b - メール送信処理を実装
-    # await send_reset_email(user["email"], token)
+    # メール送信処理
+    reset_password_url = os.environ.get(
+        "RESET_PASSWORD_URL", "http://localhost:8000/reset-password"
+    )
+    await asyncio.to_thread(
+        send_password_reset_email, user["email"], token, reset_password_url
+    )
 
     return ForgotPasswordResponse(message="メールを確認してください")
 
