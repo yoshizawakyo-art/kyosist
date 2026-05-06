@@ -94,6 +94,15 @@ git 操作（コミット・プッシュ・PR作成）は `.claude/skills/git-pu
   - **タスク完了時に必ず TaskUpdate で `status: "completed"` に設定する**（例外なし）
   - 1つのタスクが完了したら、その都度 TaskUpdate でマークしてから次のタスクに進む
   - ユーザーへの報告では、完了したタスクを明記する
+- **Task Ledger更新必須**:
+  - 継続作業の開始時は `.claude/doc/pending-tasks.md` を読む
+  - 実装・PR更新・マージ・ブランチ削除・検証結果など、タスク状態が変わったら同じターンで `.claude/doc/pending-tasks.md` を更新する
+  - 完了作業は `[x]`、未実行・環境制約・保留事項は `[ ]` と理由つきで記入する
+  - `.claude/doc/pending-tasks.md` 更新前に完了宣言しない
+- **ルール / Skill 整合性必須**:
+  - Codex 側の skill やルールを追加・更新した場合、対応する `.claude/skills/`・`.claude/rules/`・`CLAUDE.md` も同じターンで確認し、必要な同期更新を行う
+  - Claude 側のルールを追加・更新した場合も、`AGENTS.md` や Codex skill 側に反映すべき内容がないか確認する
+  - 同期しない場合は、理由を `.claude/doc/pending-tasks.md` または最終報告に明記する
 - **Check必須**: `.py` `.js` `.html` `.css` `.json` 等のコードファイルを変更したら、完了宣言の前に必ず `.claude/agents/pdca-check-reviewer.md` ガイドラインに従って超厳格にCheckを実施する。1行の修正・設定ファイルのみの変更でも例外なし（詳細: `.claude/rules/pdca-workflow.md`）
 
 詳細ルール: `.claude/rules/` 配下を参照
@@ -105,5 +114,6 @@ Do → Check（.claude/agents/pdca-check-reviewer.md ガイド準拠）→ PR作
   → PR最終レビュー（.claude/agents/pdca-check-reviewer.md ガイド準拠）
   → 指摘あり: 修正 → 直接push（新規PR不要）→ PR最終レビューに戻る
   → 指摘なし: マージ（gh pr merge --merge --auto）
+  → .claude/doc/pending-tasks.md 更新 → 完了報告
 ```
 詳細: `.claude/rules/pdca-workflow.md`
