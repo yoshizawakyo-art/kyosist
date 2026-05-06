@@ -1,1 +1,0 @@
-- [コーディングパターンと既知の違反](project_coding_patterns.md) — main.js/kyouCommon.jsで観察されたラムダ式違反・BOM・SSEバグ・エージェント判定の設計課題
