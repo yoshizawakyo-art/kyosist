@@ -190,6 +190,23 @@
 - [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
 - [ ] Full `ruff check .` remains blocked by pre-existing lint failures under `.agents/skills/codex-invoke-workspace/` and `.claude/skills/skill-creator/`; targeted Ruff for changed Python files passed.
 
+## Completed Updates 2026-05-06 (Issue #11 / PR #22)
+- [x] Implemented GitHub Issue #11 via PR #22: migrated chat, skill assistant, and ReAct agent inference from Groq to Gemini.
+- [x] Verified current official Gemini docs before implementation: Google recommends the `google-genai` Python SDK, and Gemini 2.5 Flash-Lite stable model code is `gemini-2.5-flash-lite`.
+- [x] Replaced `groq` dependency with `google-genai` in `requirements.txt`.
+- [x] Added `GEMINI_MODEL=gemini-2.5-flash-lite` to `.env.example`; environment can override this model if needed.
+- [x] Preserved frontend SSE compatibility for `/api/chat` by continuing to emit `data: {"chunk": "..."}` events.
+- [x] Updated `src/api/agent_service.py` to create Gemini clients, generate non-streaming responses, stream text chunks, and retry Gemini rate/quota failures.
+- [x] Updated `src/api/index.py` so `/api/chat`, `/api/skills/assistant`, and `/api/agent/chat` use Gemini helpers.
+- [x] Added tests for Gemini model selection, prompt role formatting, non-streaming generation, and streaming chunk filtering.
+- [x] Verification: `python.exe -m unittest tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `python.exe -m py_compile run.py src/api/index.py src/api/agent_service.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe check src/api/index.py src/api/agent_service.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe format --check src/api/index.py src/api/agent_service.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `python.exe -c "from google import genai; print('google-genai import ok')"` → PASS.
+- [x] Verification: no Groq/GROQ/AsyncGroq/llama references remain under `src/api`, `requirements.txt`, `.env.example`, or `tests`.
+- [ ] Full `ruff check .` remains blocked by pre-existing lint failures under `.agents/skills/codex-invoke-workspace/` and `.claude/skills/skill-creator/`; targeted Ruff for changed Python files passed.
+
 ## Completed Updates 2026-05-06 (Harness Audit Follow-up)
 - [x] Ran `$harness` audit after command setup and confirmed the remaining high-impact issue: `.gitignore` still hid `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` from Git visibility.
 - [x] Updated `.gitignore` to keep `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` visible while keeping session handoffs and other `.claude/doc/*` artifacts ignored.

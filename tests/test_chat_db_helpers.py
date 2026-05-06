@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -9,11 +10,18 @@ from fastapi import HTTPException
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from api.index import (
+    _build_chat_prompt,
     _fetch_conversations,
     _fetch_messages,
     _insert_conversation,
     _insert_message,
     get_supabase_client,
+)
+from api.agent_service import (
+    create_gemini_client,
+    generate_gemini_text,
+    get_gemini_model,
+    stream_gemini_text,
 )
 
 
@@ -62,6 +70,32 @@ class FakeClient:
         return self.table_obj
 
 
+class FakeGeminiModels:
+    def __init__(self):
+        self.generate_args = None
+        self.stream_args = None
+
+    async def generate_content(self, **kwargs):
+        self.generate_args = kwargs
+        return SimpleNamespace(text="応答")
+
+    async def generate_content_stream(self, **kwargs):
+        self.stream_args = kwargs
+
+        async def chunks():
+            yield SimpleNamespace(text="A")
+            yield SimpleNamespace(text="")
+            yield SimpleNamespace(text="B")
+
+        return chunks()
+
+
+class FakeGeminiClient:
+    def __init__(self):
+        self.models = FakeGeminiModels()
+        self.aio = SimpleNamespace(models=self.models)
+
+
 class ChatDbHelperTests(unittest.TestCase):
     def test_get_supabase_client_reports_missing_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -108,6 +142,54 @@ class ChatDbHelperTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 503)
         self.assertIn("メッセージ履歴を読み込めません", raised.exception.detail)
+
+    def test_chat_prompt_preserves_roles_for_gemini(self):
+        prompt = _build_chat_prompt(
+            [
+                {"role": "user", "content": "こんにちは"},
+                {"role": "bot", "content": "どうしましたか？"},
+            ],
+            "予定を整理して",
+        )
+
+        self.assertIn("User: こんにちは", prompt)
+        self.assertIn("Assistant: どうしましたか？", prompt)
+        self.assertTrue(prompt.endswith("Assistant:"))
+
+    def test_gemini_model_defaults_to_flash_lite(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_gemini_model(), "gemini-2.5-flash-lite")
+
+    def test_create_gemini_client_requires_api_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError) as raised:
+                create_gemini_client()
+
+        self.assertIn("GEMINI_API_KEY", str(raised.exception))
+
+    def test_generate_gemini_text_uses_configured_model(self):
+        client = FakeGeminiClient()
+        with patch.dict(os.environ, {"GEMINI_MODEL": "custom-gemini-model"}):
+            text = asyncio_run(generate_gemini_text(client, "prompt", temperature=0.2))
+
+        self.assertEqual(text, "応答")
+        self.assertEqual(client.models.generate_args["model"], "custom-gemini-model")
+        self.assertEqual(client.models.generate_args["contents"], "prompt")
+        self.assertEqual(client.models.generate_args["config"]["temperature"], 0.2)
+
+    def test_stream_gemini_text_filters_empty_chunks(self):
+        client = FakeGeminiClient()
+
+        async def collect():
+            return [chunk async for chunk in stream_gemini_text(client, "prompt")]
+
+        self.assertEqual(asyncio_run(collect()), ["A", "B"])
+
+
+def asyncio_run(coro):
+    import asyncio
+
+    return asyncio.run(coro)
 
 
 if __name__ == "__main__":
