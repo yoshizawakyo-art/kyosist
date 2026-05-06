@@ -1,0 +1,94 @@
+{
+  "skill_name": "codex-invoke",
+  "iteration": 2,
+  "test_date": "2026-05-04",
+  "strategy": "staged-task-splitting",
+  "summary": {
+    "total_evals": 3,
+    "eval_group": "eval-0-staged",
+    "all_stages_pass_rate": 1.0,
+    "total_duration_seconds": 136,
+    "total_tokens_used": 148630,
+    "comparison_iteration1_eval0_pass_rate": 0.6,
+    "improvement": "+40% pass rate, -55% duration vs iteration-1 eval-0"
+  },
+  "evals": [
+    {
+      "eval_id": 4,
+      "eval_name": "stage-1-pydantic-models",
+      "stage": "1-models",
+      "group": "eval-0-staged",
+      "with_skill": {
+        "duration_seconds": 16,
+        "tokens": 27502,
+        "status": "completed",
+        "notes": "LoginRequest and TokenResponse Pydantic models created cleanly",
+        "pass_rate": 1.0,
+        "assertions": [
+          {"name": "file_created", "passed": true, "evidence": "src/api/schemas/auth.py created"},
+          {"name": "login_request_model", "passed": true, "evidence": "LoginRequest(email: str, password: str)"},
+          {"name": "token_response_model", "passed": true, "evidence": "TokenResponse(access_token: str, token_type: str='bearer')"},
+          {"name": "type_hints", "passed": true, "evidence": "All fields have type annotations"},
+          {"name": "pydantic_v2", "passed": true, "evidence": "from pydantic import BaseModel"}
+        ]
+      }
+    },
+    {
+      "eval_id": 5,
+      "eval_name": "stage-2-auth-service",
+      "stage": "2-service",
+      "group": "eval-0-staged",
+      "with_skill": {
+        "duration_seconds": 28,
+        "tokens": 29926,
+        "status": "completed",
+        "notes": "Auth service with bcrypt and JWT created, imports from Stage 1 schema",
+        "pass_rate": 1.0,
+        "assertions": [
+          {"name": "file_created", "passed": true, "evidence": "src/api/auth_service.py created"},
+          {"name": "verify_password", "passed": true, "evidence": "verify_password() uses passlib CryptContext with bcrypt"},
+          {"name": "create_access_token", "passed": true, "evidence": "create_access_token() uses jose.jwt HS256"},
+          {"name": "authenticate_user", "passed": true, "evidence": "authenticate_user() returns TokenResponse | None"},
+          {"name": "env_var_for_secret", "passed": true, "evidence": "JWT_SECRET_KEY read from os.environ"}
+        ]
+      }
+    },
+    {
+      "eval_id": 6,
+      "eval_name": "stage-3-api-endpoint",
+      "stage": "3-endpoint",
+      "group": "eval-0-staged",
+      "with_skill": {
+        "duration_seconds": 92,
+        "tokens": 91202,
+        "status": "completed",
+        "notes": "Endpoint updated to use auth_service. Existing session insertion logic removed (breaking change - needs Act phase fix)",
+        "pass_rate": 1.0,
+        "assertions": [
+          {"name": "endpoint_exists", "passed": true, "evidence": "@app.post('/api/auth/login') exists"},
+          {"name": "response_model_set", "passed": true, "evidence": "response_model=TokenResponse"},
+          {"name": "auth_service_imported", "passed": true, "evidence": "from src.api.auth_service import authenticate_user"},
+          {"name": "returns_token_response", "passed": true, "evidence": "returns token_response (TokenResponse)"},
+          {"name": "401_on_failure", "passed": true, "evidence": "HTTPException(status_code=401) raised on None"}
+        ]
+      }
+    }
+  ],
+  "analysis": {
+    "strategy_effectiveness": {
+      "token_limit_problem": "RESOLVED: iteration-1 hit limit at 193 tokens; iteration-2 each stage completed cleanly",
+      "stage_isolation": "Each stage focused on 1-2 files, preventing token explosion",
+      "dependency_chain": "Schema → Service → Endpoint ordering worked correctly"
+    },
+    "tradeoffs": {
+      "total_tokens": "148,630 total vs 193 (limit) in iteration-1; higher token count but full completion",
+      "breaking_change": "Stage 3 removed session insertion logic; needs restoration in Act phase",
+      "existing_code_risk": "Staged approach needs explicit instructions about preserving existing functionality"
+    },
+    "recommendations": {
+      "use_staged_for": "Any implementation spanning 3+ files or requiring dependency ordering",
+      "add_to_skill": "Include warning in Stage 3 prompt: preserve existing endpoint logic, only add/update",
+      "improvement_for_next": "Stage 3 prompt should explicitly say: do not remove existing session/logging logic"
+    }
+  }
+}

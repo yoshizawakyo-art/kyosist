@@ -2,6 +2,19 @@ import { buildElement, buildSidebarIcon } from "./kyouUtils.js";
 
 const CONVERSATIONS_ENDPOINT = "/api/conversations";
 
+export function getAuthToken() {
+  return localStorage.getItem("kyosist_token");
+}
+
+export function getAuthHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function redirectToLogin() {
+  window.location.href = "/auth/login.html";
+}
+
 // ─── ID生成 ───────────────────────────────────────────────────
 
 /**
@@ -100,7 +113,13 @@ export function buildSidebar(refs) {
 export async function loadConversationsIntoSidebar(historyContainer, onConversationSelect) {
   historyContainer.innerHTML = "";
   try {
-    const response = await fetch(CONVERSATIONS_ENDPOINT);
+    const response = await fetch(CONVERSATIONS_ENDPOINT, {
+      headers: getAuthHeaders(),
+    });
+    if (response.status === 401) {
+      redirectToLogin();
+      throw new Error("Unauthorized");
+    }
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
       throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
