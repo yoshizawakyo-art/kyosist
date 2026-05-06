@@ -228,6 +228,21 @@
 - [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
 - [x] Verification: `ruff.exe format --check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
 
+## Completed Updates 2026-05-06 (Issue #14 / PR #25)
+- [x] Implemented GitHub Issue #14 via PR #25: changed the chat and top-page visual palette from purple to emerald green.
+- [x] Updated `src/public/common/base.css` sidebar, accent, hover, active, logo, disabled, chip hover, and mobile responsive colors.
+- [x] Updated `src/public/chat/style.css` user/bot bubbles, avatar gradient, focus shadows, agent process accents, and mobile layout.
+- [x] Updated `src/public/index.html` top-page background gradient and primary button text color.
+- [x] Added mobile CSS so the sidebar collapses into a compact top bar and the welcome input/chips no longer overflow a narrow viewport.
+- [x] Verification: `rg` confirmed old purple palette values are absent from the 3 target files.
+- [x] Verification: `git diff --check -- src/public/common/base.css src/public/chat/style.css src/public/index.html` → PASS.
+- [x] Verification: static server `python3 -m http.server 8000 --bind 127.0.0.1` served `/` and `/chat/index.html` with HTTP 200.
+- [x] Visual QA: Chrome headless screenshots reviewed with `view_image`:
+  - `/mnt/c/Users/yoshizawa/AppData/Local/Temp/kyosist-home-desktop.png`
+  - `/mnt/c/Users/yoshizawa/AppData/Local/Temp/kyosist-chat-desktop.png`
+  - `/mnt/c/Users/yoshizawa/AppData/Local/Temp/kyosist-chat-mobile.png`
+- [ ] Browser plugin was not available; Playwright fallback was attempted but blocked by missing Linux browser dependencies requiring sudo. Used installed Windows Chrome headless for rendered screenshots instead.
+
 ## Completed Updates 2026-05-06 (Harness Audit Follow-up)
 - [x] Ran `$harness` audit after command setup and confirmed the remaining high-impact issue: `.gitignore` still hid `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` from Git visibility.
 - [x] Updated `.gitignore` to keep `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` visible while keeping session handoffs and other `.claude/doc/*` artifacts ignored.
