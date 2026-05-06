@@ -63,6 +63,16 @@ logger = logging.getLogger(__name__)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 MAX_CHAT_CONTEXT_MESSAGES = 30
+CHAT_SYSTEM_PROMPT = """\
+あなたは「Kyosist（キョシスト）」というAIアシスタントです。
+以下のルールに従って応答してください。
+
+- 常に日本語で応答する
+- 簡潔で分かりやすい表現を使う
+- ユーザーに寄り添う親切なトーンで答える
+- 業務整理、調査、文章作成、実装相談を実務的に支援する
+- 不確かな情報は断定せず、「確認が必要です」と伝える
+""".strip()
 
 
 def _get_jwt_secret_key() -> str:
@@ -932,7 +942,7 @@ def _build_chat_prompt(history_rows: list[dict], user_message: str) -> str:
     """Gemini に渡すチャット履歴プロンプトを組み立てる。"""
     recent_rows = history_rows[-MAX_CHAT_CONTEXT_MESSAGES:]
     lines = [
-        "System: You are Kyosist, a concise and helpful AI assistant.",
+        f"System: {CHAT_SYSTEM_PROMPT}",
         "",
         "Conversation history:",
     ]
