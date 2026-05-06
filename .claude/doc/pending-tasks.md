@@ -178,6 +178,18 @@
 - [x] Validation: `git diff --check -- AGENTS.md CLAUDE.md .agents/AGENTS.md .claude/skills/harness/SKILL.md .agents/skills/harness/SKILL.md .claude/commands/harness.md .agents/commands/harness.md` → PASS.
 - [x] Note: `.claude/commands/harness.md` exists locally but is ignored by the repository-level `.gitignore` entry `.claude/`; `.agents/commands/harness.md` is visible as an untracked counterpart.
 
+## Completed Updates 2026-05-06 (Issue #10 / PR #21)
+- [x] Implemented GitHub Issue #10 via PR #21: chat 500 error and conversation/message history loading fixes.
+- [x] Added Supabase configuration checks in `get_supabase_client()` so missing/invalid DB settings return a user-friendly 503 instead of an unhandled 500.
+- [x] Hardened conversation/message DB helpers: insert/fetch/touch failures now log server details and return Japanese user-facing 400/503 errors; empty Supabase responses no longer become raw 500s.
+- [x] Removed empty conversation insert payloads by requiring authenticated `user_id` for conversation creation/listing.
+- [x] Added `Depends(get_current_auth_context)` to `POST /api/agent/chat` and scoped new/existing agent conversations to the authenticated user.
+- [x] Added `tests/test_chat_db_helpers.py` for missing Supabase config, user-scoped conversation inserts, empty DB responses, and DB exception translation.
+- [x] Verification: `python.exe -m unittest tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `python.exe -m py_compile run.py src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [ ] Full `ruff check .` remains blocked by pre-existing lint failures under `.agents/skills/codex-invoke-workspace/` and `.claude/skills/skill-creator/`; targeted Ruff for changed Python files passed.
+
 ## Completed Updates 2026-05-06 (Harness Audit Follow-up)
 - [x] Ran `$harness` audit after command setup and confirmed the remaining high-impact issue: `.gitignore` still hid `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` from Git visibility.
 - [x] Updated `.gitignore` to keep `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` visible while keeping session handoffs and other `.claude/doc/*` artifacts ignored.

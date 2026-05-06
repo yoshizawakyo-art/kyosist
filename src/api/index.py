@@ -452,12 +452,24 @@ def get_supabase_client() -> Client:
     例外:
       KeyError: 環境変数が設定されていない場合に発生。
     """
-    # 環境変数から Supabase の URL と API キーを取得
-    url: str = os.environ["SUPABASE_URL"]
-    key: str = os.environ["SUPABASE_ANON_KEY"]
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_ANON_KEY")
+    if not url or not key:
+        logger.error("Supabase configuration is missing")
+        raise HTTPException(
+            status_code=503,
+            detail="データベース接続設定が不足しています。管理者に連絡してください。",
+        )
 
     # 取得した認証情報でクライアントを生成・返却
-    return create_client(url, key)
+    try:
+        return create_client(url, key)
+    except Exception as exc:
+        logger.error("Supabase client creation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="データベースに接続できません。しばらくしてから再度お試しください。",
+        ) from exc
 
 
 def _fetch_user_by_email(client: Client, email: str) -> Optional[dict]:
@@ -651,16 +663,24 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
     例外:
       HTTPException(500) : データベース操作失敗時
     """
-    # 空オブジェクト {} を挿入（Supabase が自動フィールドを生成）
-    payload = {}
-    if user_id is not None:
-        payload["user_id"] = user_id
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="ログイン情報を確認できませんでした")
 
-    result = client.table("conversations").insert(payload).execute()
+    try:
+        result = client.table("conversations").insert({"user_id": user_id}).execute()
+    except Exception as exc:
+        logger.error("conversation insert failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話を作成できませんでした。時間をおいて再度お試しください。",
+        ) from exc
 
-    # 結果チェック：データが取得できなかった場合はエラー
     if not result.data:
-        raise HTTPException(status_code=500, detail="会話の作成に失敗しました")
+        logger.error("conversation insert returned no data")
+        raise HTTPException(
+            status_code=503,
+            detail="会話を作成できませんでした。時間をおいて再度お試しください。",
+        )
 
     # 最初のレコード（実際には1件のみ）を返す
     return result.data[0]
@@ -668,25 +688,41 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
 
 def _fetch_conversations(client: Client, user_id: str | None = None) -> list[dict]:
     """Fetch recent conversations, optionally scoped to a user."""
-    query = client.table("conversations").select("*")
-    if user_id is not None:
-        query = query.eq("user_id", user_id)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="ログイン情報を確認できませんでした")
 
-    result = query.order("updated_at", desc=True).limit(50).execute()
-    return result.data
+    query = client.table("conversations").select("*")
+    query = query.eq("user_id", user_id)
+
+    try:
+        result = query.order("updated_at", desc=True).limit(50).execute()
+    except Exception as exc:
+        logger.error("conversation fetch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話履歴を読み込めませんでした。時間をおいて再度お試しください。",
+        ) from exc
+    return result.data or []
 
 
 def _fetch_conversation(
     client: Client, conversation_id: str, user_id: str
 ) -> Optional[dict]:
-    result = (
-        client.table("conversations")
-        .select("*")
-        .eq("id", conversation_id)
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        result = (
+            client.table("conversations")
+            .select("*")
+            .eq("id", conversation_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("conversation lookup failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話を確認できませんでした。時間をおいて再度お試しください。",
+        ) from exc
     return result.data[0] if result.data else None
 
 
@@ -706,14 +742,21 @@ def _fetch_messages(client: Client, conversation_id: str) -> list[dict]:
       list[dict] : 該当するメッセージレコードのリスト。
                   作成日時の古い順に並んでいます。
     """
-    result = (
-        client.table("messages")
-        .select("*")  # すべてのカラムを選択
-        .eq("conversation_id", conversation_id)  # 指定会話IDで絞込
-        .order("created_at")  # 作成日時で古い順にソート
-        .execute()
-    )
-    return result.data
+    try:
+        result = (
+            client.table("messages")
+            .select("*")  # すべてのカラムを選択
+            .eq("conversation_id", conversation_id)  # 指定会話IDで絞込
+            .order("created_at")  # 作成日時で古い順にソート
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("message fetch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージ履歴を読み込めませんでした。時間をおいて再度お試しください。",
+        ) from exc
+    return result.data or []
 
 
 def _insert_message(
@@ -739,13 +782,26 @@ def _insert_message(
     例外:
       HTTPException(500) : データベース操作失敗時
     """
-    result = (
-        client.table("messages")
-        .insert({"conversation_id": conversation_id, "role": role, "content": content})
-        .execute()
-    )
+    try:
+        result = (
+            client.table("messages")
+            .insert(
+                {"conversation_id": conversation_id, "role": role, "content": content}
+            )
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("message insert failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージを保存できませんでした。時間をおいて再度お試しください。",
+        ) from exc
     if not result.data:
-        raise HTTPException(status_code=500, detail="メッセージの保存に失敗しました")
+        logger.error("message insert returned no data")
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージを保存できませんでした。時間をおいて再度お試しください。",
+        )
     return result.data[0]
 
 
@@ -764,10 +820,16 @@ def _touch_conversation(client: Client, conversation_id: str) -> None:
     戻り値:
       None（戻り値なし）
     """
-    # 指定会話の updated_at を現在時刻（now()）に更新
-    client.table("conversations").update({"updated_at": "now()"}).eq(
-        "id", conversation_id
-    ).execute()
+    try:
+        client.table("conversations").update({"updated_at": "now()"}).eq(
+            "id", conversation_id
+        ).execute()
+    except Exception as exc:
+        logger.error("conversation touch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話の更新に失敗しました。時間をおいて再度お試しください。",
+        ) from exc
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1547,7 +1609,10 @@ async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
 
 
 @app.post("/api/agent/chat")
-async def agent_chat(req: ChatRequest) -> StreamingResponse:
+async def agent_chat(
+    req: ChatRequest,
+    current_user: dict = Depends(get_current_auth_context),
+) -> StreamingResponse:
     """
     POST /api/agent/chat
     ReAct エージェントを起動し、思考ステップを SSE でストリーミング返却する。
@@ -1566,13 +1631,22 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         raise HTTPException(status_code=503, detail="GROQ_API_KEY が設定されていません")
 
     groq_client = AsyncGroq(api_key=groq_key)
-    supabase = get_supabase_client()
+    supabase = current_user["client"]
+    user_id = current_user["user"]["id"]
 
     if req.conversation_id is None:
-        conv_row = await asyncio.to_thread(_insert_conversation, supabase)
+        conv_row = await asyncio.to_thread(_insert_conversation, supabase, user_id)
         conv_id: str = conv_row["id"]
     else:
         conv_id = str(req.conversation_id)
+        conversation = await asyncio.to_thread(
+            _fetch_conversation,
+            supabase,
+            conv_id,
+            user_id,
+        )
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
     user_msg_row = await asyncio.to_thread(
         _insert_message, supabase, conv_id, "user", req.message
