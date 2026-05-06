@@ -62,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
+MAX_CHAT_CONTEXT_MESSAGES = 30
 
 
 def _get_jwt_secret_key() -> str:
@@ -929,12 +930,13 @@ def _build_skill_draft_from_text(message: str) -> Optional[dict]:
 
 def _build_chat_prompt(history_rows: list[dict], user_message: str) -> str:
     """Gemini に渡すチャット履歴プロンプトを組み立てる。"""
+    recent_rows = history_rows[-MAX_CHAT_CONTEXT_MESSAGES:]
     lines = [
         "System: You are Kyosist, a concise and helpful AI assistant.",
         "",
         "Conversation history:",
     ]
-    for row in history_rows:
+    for row in recent_rows:
         role = "Assistant" if row.get("role") == "bot" else "User"
         content = row.get("content")
         if content:

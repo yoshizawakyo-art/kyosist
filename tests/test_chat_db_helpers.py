@@ -156,6 +156,19 @@ class ChatDbHelperTests(unittest.TestCase):
         self.assertIn("Assistant: どうしましたか？", prompt)
         self.assertTrue(prompt.endswith("Assistant:"))
 
+    def test_chat_prompt_limits_context_to_latest_30_messages(self):
+        history = [
+            {"role": "user", "content": f"message-{index}"} for index in range(35)
+        ]
+
+        prompt = _build_chat_prompt(history, "new message")
+
+        self.assertNotIn("message-0", prompt)
+        self.assertNotIn("message-4", prompt)
+        self.assertIn("message-5", prompt)
+        self.assertIn("message-34", prompt)
+        self.assertEqual(prompt.count("User: message-"), 30)
+
     def test_gemini_model_defaults_to_flash_lite(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(get_gemini_model(), "gemini-2.5-flash-lite")

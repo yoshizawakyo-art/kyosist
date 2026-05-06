@@ -207,6 +207,17 @@
 - [x] Verification: no Groq/GROQ/AsyncGroq/llama references remain under `src/api`, `requirements.txt`, `.env.example`, or `tests`.
 - [ ] Full `ruff check .` remains blocked by pre-existing lint failures under `.agents/skills/codex-invoke-workspace/` and `.claude/skills/skill-creator/`; targeted Ruff for changed Python files passed.
 
+## Completed Updates 2026-05-06 (Issue #12 / PR #23)
+- [x] Implemented GitHub Issue #12 via PR #23: limited model conversation context to the latest 30 messages.
+- [x] Added `MAX_CHAT_CONTEXT_MESSAGES = 30` in `src/api/index.py`.
+- [x] Updated `_build_chat_prompt()` to use only `history_rows[-30:]`, preserving chronological order for the retained context.
+- [x] Kept `GET /api/conversations/{conversation_id}/messages` unchanged so the UI can still load full message history.
+- [x] Added a regression test confirming old messages are excluded and exactly 30 prior messages are sent to the prompt.
+- [x] Verification: `python.exe -m unittest tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `python.exe -m py_compile run.py src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+- [x] Verification: `ruff.exe format --check src/api/index.py tests/test_chat_db_helpers.py` → PASS.
+
 ## Completed Updates 2026-05-06 (Harness Audit Follow-up)
 - [x] Ran `$harness` audit after command setup and confirmed the remaining high-impact issue: `.gitignore` still hid `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` from Git visibility.
 - [x] Updated `.gitignore` to keep `.claude/commands/`, `.claude/hooks/`, and `.claude/doc/pending-tasks.md` visible while keeping session handoffs and other `.claude/doc/*` artifacts ignored.
