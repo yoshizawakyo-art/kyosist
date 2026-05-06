@@ -1,6 +1,7 @@
 import { buildElement, buildInputBox } from "../common/kyouUtils.js";
 import {
   buildSidebar,
+  getAuthHeaders,
   loadConversationsIntoSidebar,
   prependConversationItem,
 } from "../common/kyouCommon.js";
@@ -11,6 +12,22 @@ let isSendingMessage      = false;
 let isInChatMode          = false;
 let currentConversationId = null;
 const refs                = {};
+
+function redirectToLogin() {
+  window.location.href = "/auth/login.html";
+}
+
+async function throwForErrorResponse(response) {
+  if (response.status === 401) {
+    redirectToLogin();
+    throw new Error("Unauthorized");
+  }
+
+  const errorText = await response.text().catch(function getFallbackErrorText() {
+    return response.statusText;
+  });
+  throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+}
 
 // ── ウェルカム画面の構築 ──
 
@@ -134,6 +151,7 @@ function appendChatMessage(messageText, senderRole) {
   messageRow.append(avatarElement, bubbleElement);
   refs.messages.appendChild(messageRow);
   refs.messages.scrollTop = refs.messages.scrollHeight;
+  return bubbleElement;
 }
 
 /**
@@ -209,8 +227,10 @@ async function loadConversationMessages(conversationId) {
   refs.messages.innerHTML = "";
 
   try {
-    const response = await fetch(`/api/conversations/${conversationId}/messages`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const response = await fetch(`/api/conversations/${conversationId}/messages`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) await throwForErrorResponse(response);
     const messages = await response.json();
     messages.forEach(function renderHistoryMessage(message) {
       appendChatMessage(message.content, message.role);
@@ -326,7 +346,7 @@ async function sendAgentMessage(messageText) {
   try {
     const response = await fetch("/api/agent/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, getAuthHeaders()),
       body: JSON.stringify({
         message: messageText,
         conversation_id: currentConversationId,
@@ -334,8 +354,7 @@ async function sendAgentMessage(messageText) {
     });
 
     if (!response.ok) {
-      const errText = await response.text().catch(function getStatus() { return response.statusText; });
-      throw new Error(`HTTP ${response.status}: ${errText}`);
+      await throwForErrorResponse(response);
     }
 
     const reader = response.body.getReader();
@@ -426,33 +445,81 @@ async function sendMessageToAPI(messageText) {
   try {
     const response = await fetch(CHAT_API_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, getAuthHeaders()),
       body: JSON.stringify({
         message: messageText,
         conversation_id: currentConversationId,
       }),
     });
     if (!response.ok) {
-      function getFallbackErrorText() {
-        return response.statusText;
-      }
-      const errorText = await response.text().catch(getFallbackErrorText);
-      throw new Error(`HTTP ${response.status} ${response.statusText}: ${errorText}`);
+      await throwForErrorResponse(response);
     }
-    const responseData = await response.json();
 
-    currentConversationId = responseData.conversation_id;
+    if (!response.body) {
+      throw new Error("Response body is not readable");
+    }
 
-    if (isNewConversation) {
-      prependConversationItem(
-        refs.chatHistory,
-        { id: responseData.conversation_id, title: messageText },
-        loadConversationMessages
-      );
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let botBubble = null;
+    let sidebarAdded = false;
+    let isDone = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") {
+          isDone = true;
+          break;
+        }
+
+        let payload;
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+
+        if (!sidebarAdded && payload.conversation_id) {
+          currentConversationId = payload.conversation_id;
+          if (isNewConversation) {
+            prependConversationItem(
+              refs.chatHistory,
+              { id: payload.conversation_id, title: messageText },
+              loadConversationMessages
+            );
+          }
+          sidebarAdded = true;
+        }
+
+        const chunk = payload.chunk ?? payload.content ?? "";
+        if (!chunk) continue;
+
+        if (!botBubble) {
+          hideTypingIndicator();
+          botBubble = appendChatMessage("", "bot");
+        }
+        botBubble.textContent += chunk;
+        refs.messages.scrollTop = refs.messages.scrollHeight;
+      }
+
+      if (isDone) break;
     }
 
     hideTypingIndicator();
-    appendChatMessage(responseData.reply, "bot");
   } catch (err) {
     hideTypingIndicator();
     appendChatMessage(`エラー: ${err.message}`, "bot");

@@ -635,7 +635,7 @@ async def get_current_auth_context(request: Request) -> dict:
 #     修正時はこれらの関数だけを変更すれば済みます。
 
 
-def _insert_conversation(client: Client) -> dict:
+def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
     """
     【新規会話を作成してデータベースに保存】
     空の会話レコードを conversations テーブルに挿入します。
@@ -652,7 +652,11 @@ def _insert_conversation(client: Client) -> dict:
       HTTPException(500) : データベース操作失敗時
     """
     # 空オブジェクト {} を挿入（Supabase が自動フィールドを生成）
-    result = client.table("conversations").insert({}).execute()
+    payload = {}
+    if user_id is not None:
+        payload["user_id"] = user_id
+
+    result = client.table("conversations").insert(payload).execute()
 
     # 結果チェック：データが取得できなかった場合はエラー
     if not result.data:
@@ -662,28 +666,28 @@ def _insert_conversation(client: Client) -> dict:
     return result.data[0]
 
 
-def _fetch_conversations(client: Client) -> list[dict]:
-    """
-    【すべての会話一覧を取得】
-    conversations テーブルから最新50件の会話を、
-    更新日時の新しい順に取得します。
+def _fetch_conversations(client: Client, user_id: str | None = None) -> list[dict]:
+    """Fetch recent conversations, optionally scoped to a user."""
+    query = client.table("conversations").select("*")
+    if user_id is not None:
+        query = query.eq("user_id", user_id)
 
-    引数:
-      client: Client
-        → Supabase クライアントインスタンス
+    result = query.order("updated_at", desc=True).limit(50).execute()
+    return result.data
 
-    戻り値:
-      list[dict] : 会話レコードのリスト（最大50件）。
-                  更新日時の新しい順に並んでいます。
-    """
+
+def _fetch_conversation(
+    client: Client, conversation_id: str, user_id: str
+) -> Optional[dict]:
     result = (
         client.table("conversations")
-        .select("*")  # すべてのカラムを選択
-        .order("updated_at", desc=True)  # 更新日時で新しい順にソート
-        .limit(50)  # 最大50件に制限
+        .select("*")
+        .eq("id", conversation_id)
+        .eq("user_id", user_id)
+        .limit(1)
         .execute()
     )
-    return result.data
+    return result.data[0] if result.data else None
 
 
 def _fetch_messages(client: Client, conversation_id: str) -> list[dict]:
@@ -984,154 +988,134 @@ async def logout(
 
 
 @app.post("/api/conversations", response_model=ConversationResponse, status_code=201)
-async def create_conversation() -> ConversationResponse:
-    """
-    【POST /api/conversations】 新規会話を作成するエンドポイント
-
-    【役割】
-    クライアントが新しいチャット会話を開始する際に呼び出されます。
-    ユーザーが「新しいチャット」をクリックしたときに実行されます。
-
-    【リクエスト】
-    クエリパラメータ・ボディなし
-
-    【レスポンス】
-    ConversationResponse（HTTP 201 Created）
-    - id: 新規に生成された会話ID
-    - title: 空文字列（最初のメッセージで自動設定）
-    - created_at: 作成日時
-    - updated_at: 作成日時と同じ
-
-    【例】
-    curl -X POST http://localhost:8000/api/conversations
-    → {"id": "...", "title": "", "created_at": "...", "updated_at": "..."}
-    """
-    client = get_supabase_client()
-    row = await asyncio.to_thread(_insert_conversation, client)
+async def create_conversation(
+    current_user: dict = Depends(get_current_auth_context),
+) -> ConversationResponse:
+    client = current_user["client"]
+    user_id = current_user["user"]["id"]
+    row = await asyncio.to_thread(_insert_conversation, client, user_id)
     return ConversationResponse(**row)
 
 
 @app.get("/api/conversations", response_model=list[ConversationResponse])
-async def list_conversations() -> list[ConversationResponse]:
-    """
-    【GET /api/conversations】 会話一覧を取得するエンドポイント
-
-    【役割】
-    サイドバーの「最近のチャット」欄に表示する会話一覧を取得します。
-    ページ読込時と「新しいチャット」作成後に呼び出されます。
-
-    【リクエスト】
-    クエリパラメータなし
-
-    【レスポンス】
-    list[ConversationResponse]
-    - 最大50件の会話を、更新日時の新しい順に返す
-    - 最近やり取りがあった会話が先頭に来る
-
-    【例】
-    curl http://localhost:8000/api/conversations
-    → [{"id": "...", "title": "...", ...}, ...]
-    """
-    client = get_supabase_client()
-    rows = await asyncio.to_thread(_fetch_conversations, client)
-    return [ConversationResponse(**r) for r in rows]
+async def list_conversations(
+    current_user: dict = Depends(get_current_auth_context),
+) -> list[ConversationResponse]:
+    client = current_user["client"]
+    user_id = current_user["user"]["id"]
+    rows = await asyncio.to_thread(_fetch_conversations, client, user_id)
+    return [ConversationResponse(**row) for row in rows]
 
 
 @app.get(
     "/api/conversations/{conversation_id}/messages",
     response_model=list[MessageResponse],
 )
-async def list_messages(conversation_id: uuid.UUID) -> list[MessageResponse]:
-    """
-    【GET /api/conversations/{conversation_id}/messages】
-    指定会話のメッセージ一覧を取得するエンドポイント
+async def list_messages(
+    conversation_id: uuid.UUID,
+    current_user: dict = Depends(get_current_auth_context),
+) -> list[MessageResponse]:
+    client = current_user["client"]
+    user_id = current_user["user"]["id"]
+    conversation = await asyncio.to_thread(
+        _fetch_conversation,
+        client,
+        str(conversation_id),
+        user_id,
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
-    【役割】
-    サイドバーの過去会話をクリックしたとき、その会話の過去メッセージを
-    チャット画面に読み込みます。
-
-    【パスパラメータ】
-    conversation_id : 照会対象の会話ID（UUID 形式）
-
-    【レスポンス】
-    list[MessageResponse]
-    - 指定会話に属するすべてのメッセージを、作成日時の古い順に返す
-    - ユーザーメッセージと AI メッセージが時系列で混在
-
-    【例】
-    curl http://localhost:8000/api/conversations/550e8400-e29b-41d4-a716-446655440000/messages
-    → [{"id": "...", "role": "user", "content": "...", ...}, ...]
-    """
-    client = get_supabase_client()
     rows = await asyncio.to_thread(_fetch_messages, client, str(conversation_id))
-    return [MessageResponse(**r) for r in rows]
+    return [MessageResponse(**row) for row in rows]
 
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
-    """
-    【POST /api/chat】 チャットメッセージを送信して AI 応答を取得するエンドポイント
+@app.post("/api/chat")
+async def chat(
+    req: ChatRequest,
+    current_user: dict = Depends(get_current_auth_context),
+) -> StreamingResponse:
+    try:
+        from groq import AsyncGroq
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503, detail="groq package is not installed"
+        ) from exc
 
-    【役割】
-    チャットUIからユーザーメッセージを受け取り、
-    それをデータベースに保存し、AI応答を生成・保存して返却します。
-    このエンドポイントが最も頻繁に使用されるメインのチャット機能です。
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if not groq_key:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY is not configured")
 
-    【リクエストボディ】
-    ChatRequest
-    - message: 必須。ユーザーの入力テキスト
-    - conversation_id: 任意。既存会話の場合は指定、新規会話の場合は null
+    client = current_user["client"]
+    user_id = current_user["user"]["id"]
+    groq_client = AsyncGroq(api_key=groq_key)
 
-    【処理フロー】
-    1. conversation_id が null なら新規会話を作成
-    2. ユーザーメッセージを messages テーブルに保存（role="user"）
-    3. AI応答を生成（実装例では単純な返信文）
-    4. AI応答を messages テーブルに保存（role="bot"）
-    5. 会話の updated_at を更新（一覧ソート用）
-    6. AI応答と会話IDをクライアントに返す
-
-    【レスポンス】
-    ChatResponse（HTTP 200 OK）
-    - reply: AI が生成した応答テキスト
-    - conversation_id: メッセージが属する会話ID
-      （新規会話の場合、ここで初めて会話IDが通知される）
-
-    【例】
-    curl -X POST http://localhost:8000/api/chat \
-      -H "Content-Type: application/json" \
-      -d '{"message": "Hello!", "conversation_id": null}'
-    → {"reply": "Pythonからの返信: Hello!", "conversation_id": "..."}
-    """
-    # Supabase クライアントを取得
-    client = get_supabase_client()
-
-    # 新規会話か既存会話かで処理を分岐
     if req.conversation_id is None:
-        # 新規会話：conversations テーブルに新しい行を作成
-        conv_row = await asyncio.to_thread(_insert_conversation, client)
+        conv_row = await asyncio.to_thread(_insert_conversation, client, user_id)
         conv_id: str = conv_row["id"]
     else:
-        # 既存会話：指定された ID を使用
         conv_id = str(req.conversation_id)
+        conversation = await asyncio.to_thread(
+            _fetch_conversation,
+            client,
+            conv_id,
+            user_id,
+        )
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # ユーザーのメッセージを messages テーブルに保存
-    # role="user" で「ユーザーが送信した」と記録
-    await asyncio.to_thread(_insert_message, client, conv_id, "user", req.message)
+    history_rows = await asyncio.to_thread(_fetch_messages, client, conv_id)
+    groq_messages = [
+        {
+            "role": "system",
+            "content": "You are Kyosist, a concise and helpful AI assistant.",
+        }
+    ]
+    for row in history_rows:
+        role = "assistant" if row.get("role") == "bot" else "user"
+        content = row.get("content")
+        if content:
+            groq_messages.append({"role": role, "content": content})
+    groq_messages.append({"role": "user", "content": req.message})
 
-    # AI応答を生成
-    # （現在の実装は単純な返信。将来的に OpenAI API 等と統合）
-    reply: str = f"Pythonからの返信: {req.message}"
+    stream = await groq_client.chat.completions.create(
+        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        messages=groq_messages,
+        temperature=0.7,
+        stream=True,
+    )
 
-    # AI応答を messages テーブルに保存
-    # role="bot" で「AIが生成した」と記録
-    await asyncio.to_thread(_insert_message, client, conv_id, "bot", reply)
+    async def event_stream():
+        final_reply = ""
+        try:
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                if not delta:
+                    continue
+                final_reply += delta
+                payload = json.dumps({"chunk": delta}, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
 
-    # 会話の updated_at を現在時刻に更新
-    # （サイドバーの一覧で新しい順にソートされるため）
-    await asyncio.to_thread(_touch_conversation, client, conv_id)
+            await asyncio.to_thread(
+                _insert_message, client, conv_id, "user", req.message
+            )
+            if final_reply:
+                await asyncio.to_thread(
+                    _insert_message, client, conv_id, "bot", final_reply
+                )
+            await asyncio.to_thread(_touch_conversation, client, conv_id)
+        except Exception as exc:
+            logger.error("chat streaming error: %s", exc, exc_info=True)
+            payload = json.dumps({"error": str(exc)}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
 
-    # クライアントに応答を返す
-    return ChatResponse(reply=reply, conversation_id=uuid.UUID(conv_id))
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/automation/sites", response_model=list[AutomationSiteResponse])
