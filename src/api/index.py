@@ -49,8 +49,8 @@ try:
 except ImportError:  # pragma: no cover - handled at runtime with a clear API error
     bcrypt = None
 
-from api import automation_service
-from api.agent_service import build_agent_event, run_agent
+from . import automation_service
+from .agent_service import build_agent_event, run_agent
 
 logger = logging.getLogger(__name__)
 
@@ -1610,6 +1610,14 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
+
+# タスク実行 API ルーター統合
+try:
+    from api.task_api import router as task_router
+
+    app.include_router(task_router)
+except ImportError:
+    logger.warning("task_api モジュールのインポートに失敗しました")
 
 # Vercel では静的ファイルは CDN が配信するため、ローカル開発時のみマウントする。
 # VERCEL 環境変数が設定されている場合（Vercel 関数実行環境）はスキップする。
