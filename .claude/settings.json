@@ -1,0 +1,81 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/self-check-followup.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/track-modified-file.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/skill-optimizer-on-create.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/stop-lint-format.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/harness-engineering-startup.sh",
+            "statusMessage": "🔧 ハーネス自動メンテナンス実行中...",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/self-check-followup-on-prompt.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/mnt/c/Develop/Projects/MIRAI/material/dev/.claude/hooks/clear-summarize-session.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

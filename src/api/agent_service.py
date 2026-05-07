@@ -1,12 +1,12 @@
 """
 ReAct (Thought/Action/Observation) 自律エージェントサービス。
 
-Groq (Llama 3.3 70B) を推論エンジンとして使用し、以下のツールを呼び出す:
+Gemini 2.5 Flash-Lite を推論エンジンとして使用し、以下のツールを呼び出す:
   - web_search  : Tavily API でウェブ検索
   - notion_write: Notion API でデータベースに書き込み
 
 各ステップは Supabase の agent_steps テーブルに永続化される。
-Groq のレート制限には指数バックオフで対応する。
+Gemini のレート制限には指数バックオフで対応する。
 """
 
 import ast
@@ -18,18 +18,17 @@ import random
 import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
-from groq import AsyncGroq
 from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 10
 MAX_SEARCH_RESULTS = 5
-GROQ_MAX_RETRIES = 5
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GEMINI_MAX_RETRIES = 5
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """\
 あなたは自律的なAIリサーチアシスタントです。ユーザーのリクエストを達成するために
@@ -198,36 +197,92 @@ async def skill_call(skill_name: str, input_text: str, skills: list[dict]) -> st
             return f"スキル「{skill_name}」の実行エラー: {e}"
 
 
-# ── Groq 呼び出し ───────────────────────────────────────────────
+# ── Gemini 呼び出し ────────────────────────────────────────────
 
 
-async def _call_groq_with_retry(groq_client: AsyncGroq, prompt: str) -> str:
-    """指数バックオフ付きで Groq API を呼び出す。"""
-    for attempt in range(GROQ_MAX_RETRIES):
+def get_gemini_model() -> str:
+    """環境変数で上書き可能な Gemini モデルIDを返す。"""
+    return os.environ.get("GEMINI_MODEL", GEMINI_MODEL)
+
+
+def create_gemini_client() -> Any:
+    """Google Gen AI SDK の Gemini クライアントを作成する。"""
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY が設定されていません")
+
+    try:
+        from google import genai
+    except ImportError as exc:
+        raise RuntimeError("google-genai パッケージが未インストールです") from exc
+
+    return genai.Client(api_key=api_key)
+
+
+async def generate_gemini_text(
+    gemini_client: Any,
+    prompt: str,
+    *,
+    temperature: float = 0.7,
+    max_output_tokens: int = 2048,
+) -> str:
+    """Gemini から単発テキスト応答を取得する。"""
+    response = await gemini_client.aio.models.generate_content(
+        model=get_gemini_model(),
+        contents=prompt,
+        config={
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        },
+    )
+    return response.text or ""
+
+
+async def stream_gemini_text(
+    gemini_client: Any,
+    prompt: str,
+    *,
+    temperature: float = 0.7,
+):
+    """Gemini のストリーミング応答からテキスト差分を yield する。"""
+    stream = await gemini_client.aio.models.generate_content_stream(
+        model=get_gemini_model(),
+        contents=prompt,
+        config={"temperature": temperature},
+    )
+    async for chunk in stream:
+        text = chunk.text or ""
+        if text:
+            yield text
+
+
+async def _call_gemini_with_retry(gemini_client: Any, prompt: str) -> str:
+    """指数バックオフ付きで Gemini API を呼び出す。"""
+    for attempt in range(GEMINI_MAX_RETRIES):
         try:
-            response = await groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=2048,
+            return await generate_gemini_text(
+                gemini_client,
+                prompt,
+                temperature=0.7,
+                max_output_tokens=2048,
             )
-            return response.choices[0].message.content or ""
         except Exception as exc:
             err_str = str(exc).lower()
             is_retriable = any(
                 kw in err_str for kw in ("429", "rate", "quota", "resource exhausted")
             )
-            if is_retriable and attempt < GROQ_MAX_RETRIES - 1:
+            if is_retriable and attempt < GEMINI_MAX_RETRIES - 1:
                 wait = (2**attempt) + random.uniform(0, 1)
                 logger.warning(
-                    "Groq レート制限: %.1f 秒待機 (試行 %d/%d)",
+                    "Gemini レート制限: %.1f 秒待機 (試行 %d/%d)",
                     wait,
                     attempt + 1,
-                    GROQ_MAX_RETRIES,
+                    GEMINI_MAX_RETRIES,
                 )
                 await asyncio.sleep(wait)
                 continue
             raise
-    raise RuntimeError("Groq API: 最大リトライ数に達しました")
+    raise RuntimeError("Gemini API: 最大リトライ数に達しました")
 
 
 # ── ReAct パーサー ──────────────────────────────────────────────
@@ -310,7 +365,7 @@ def _save_step(client: Client, message_id: str, step: AgentStep) -> None:
 
 async def run_agent(
     user_message: str,
-    groq_client: AsyncGroq,
+    gemini_client: Any,
     supabase_client: Client,
     message_id: str,
     skills: list[dict] | None = None,
@@ -327,7 +382,7 @@ async def run_agent(
         prompt = _build_system_prompt(skills) + "\n\n" + "\n".join(history)
 
         try:
-            llm_output = await _call_groq_with_retry(groq_client, prompt)
+            llm_output = await _call_gemini_with_retry(gemini_client, prompt)
         except Exception as exc:
             error_step = AgentStep(
                 step_type="observation",
