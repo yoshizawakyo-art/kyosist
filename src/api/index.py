@@ -1687,6 +1687,14 @@ async def agent_chat(
     )
 
 
+# タスク実行 API ルーター統合
+try:
+    from api.task_api import router as task_router
+
+    app.include_router(task_router)
+except ImportError:
+    logger.warning("task_api モジュールのインポートに失敗しました")
+
 # Vercel では静的ファイルは CDN が配信するため、ローカル開発時のみマウントする。
 # VERCEL 環境変数が設定されている場合（Vercel 関数実行環境）はスキップする。
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "public")

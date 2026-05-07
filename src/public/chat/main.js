@@ -5,6 +5,7 @@ import {
   loadConversationsIntoSidebar,
   prependConversationItem,
 } from "../common/kyouCommon.js";
+import { buildTaskExecutorSection } from "./task_executor.js";
 
 const CHAT_API_ENDPOINT = "/api/chat";
 
@@ -116,7 +117,8 @@ function buildPage() {
   refs.welcome   = buildWelcomeScreen();
   refs.chatView  = buildChatView();
   refs.bottomBar = buildBottomInputBar();
-  mainElement.append(refs.welcome, refs.chatView, refs.bottomBar);
+  refs.taskSection = buildTaskExecutorSection();
+  mainElement.append(refs.welcome, refs.chatView, refs.bottomBar, refs.taskSection);
   document.body.append(buildSidebar(refs), mainElement);
 }
 
