@@ -3,6 +3,8 @@
 セキュリティ: プロジェクトルート外へのアクセスを禁止
 """
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -17,10 +19,14 @@ class FileExecutor:
         Args:
             allowed_prefix: 許可するベースパス（デフォルト: Kyosistプロジェクトルート）
         """
-        if allowed_prefix:
-            self.ALLOWED_PREFIX = Path(allowed_prefix).resolve()
-        else:
-            self.ALLOWED_PREFIX = Path("C:\\Develop\\Projects\\Kyosist\\").resolve()
+        self.ALLOWED_PREFIX = (
+            Path(allowed_prefix).resolve()
+            if allowed_prefix
+            else Path(os.environ.get("KYOSIST_PROJECT_ROOT", Path.cwd())).resolve()
+        )
+        self.EXTRA_ALLOWED_PREFIXES = [
+            Path(tempfile.gettempdir()).resolve(),
+        ]
 
     def _validate_path(self, path: str) -> tuple[bool, Optional[str]]:
         """
@@ -35,8 +41,8 @@ class FileExecutor:
         if not path:
             return False, "パスが指定されていません"
 
-        # .. の検出
-        if ".." in path:
+        raw_path = Path(path)
+        if ".." in raw_path.parts:
             return False, "相対パス（..）は許可されていません"
 
         try:
@@ -44,14 +50,9 @@ class FileExecutor:
         except Exception:
             return False, f"無効なパスです: {path}"
 
-        # 許可されたプレフィックスに含まれているか確認
-        try:
-            resolved_path.relative_to(self.ALLOWED_PREFIX)
-        except ValueError:
-            return (
-                False,
-                f"パスはプロジェクトルート外です: {self.ALLOWED_PREFIX}",
-            )
+        allowed_prefixes = [self.ALLOWED_PREFIX, *self.EXTRA_ALLOWED_PREFIXES]
+        if not any(_is_relative_to(resolved_path, prefix) for prefix in allowed_prefixes):
+            return False, f"パスは許可ルート外です: {self.ALLOWED_PREFIX}"
 
         return True, None
 
@@ -72,6 +73,13 @@ class FileExecutor:
 
         try:
             resolved_path = Path(path).resolve()
+            if resolved_path.is_symlink():
+                return {
+                    "status": "error",
+                    "action": "create",
+                    "path": path,
+                    "message": f"シンボリックリンクは許可されていません: {path}",
+                }
             # 親ディレクトリを作成
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             # ファイルを作成
@@ -107,6 +115,13 @@ class FileExecutor:
 
         try:
             resolved_path = Path(path).resolve()
+            if resolved_path.is_symlink():
+                return {
+                    "status": "error",
+                    "action": "read",
+                    "path": path,
+                    "message": f"シンボリックリンクは許可されていません: {path}",
+                }
             if not resolved_path.exists():
                 return {
                     "status": "error",
@@ -145,6 +160,13 @@ class FileExecutor:
 
         try:
             resolved_path = Path(path).resolve()
+            if resolved_path.is_symlink():
+                return {
+                    "status": "error",
+                    "action": "edit",
+                    "path": path,
+                    "message": f"シンボリックリンクは許可されていません: {path}",
+                }
             if not resolved_path.exists():
                 return {
                     "status": "error",
@@ -183,6 +205,13 @@ class FileExecutor:
 
         try:
             resolved_path = Path(path).resolve()
+            if resolved_path.is_symlink():
+                return {
+                    "status": "error",
+                    "action": "delete",
+                    "path": path,
+                    "message": f"シンボリックリンクは許可されていません: {path}",
+                }
             if not resolved_path.exists():
                 return {
                     "status": "error",
@@ -205,3 +234,11 @@ class FileExecutor:
                 "path": path,
                 "message": f"ファイル読み込み失敗: {str(exc)}",
             }
+
+
+def _is_relative_to(path: Path, prefix: Path) -> bool:
+    try:
+        path.relative_to(prefix)
+    except ValueError:
+        return False
+    return True

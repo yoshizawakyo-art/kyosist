@@ -55,6 +55,15 @@ def parse_task_input(user_input: str) -> Dict[str, Any]:
             "params": {"path": path},
         }
 
+    file_read_match = re.match(r"ファイル\s+(.+?)\s+を読んで$", user_input)
+    if file_read_match:
+        path = file_read_match.group(1).strip()
+        return {
+            "task_type": "file",
+            "action": "read",
+            "params": {"path": path},
+        }
+
     # CLI コマンド実行パターン
     cli_match = re.match(r"コマンド実行:\s+(.+)$", user_input)
     if cli_match:
@@ -86,6 +95,36 @@ def parse_task_input(user_input: str) -> Dict[str, Any]:
             "task_type": "browser",
             "action": "input_text",
             "params": {"selector": selector, "text": text},
+        }
+
+    browser_navigate_match = re.match(r"ブラウザ操作:\s+移動\s+(.+)$", user_input)
+    if browser_navigate_match:
+        url = browser_navigate_match.group(1).strip()
+        return {
+            "task_type": "browser",
+            "action": "navigate",
+            "params": {"url": url},
+        }
+
+    browser_scroll_match = re.match(
+        r"ブラウザ操作:\s+スクロール\s+(down|up|left|right)(?:\s+(\d+))?$",
+        user_input,
+    )
+    if browser_scroll_match:
+        return {
+            "task_type": "browser",
+            "action": "scroll",
+            "params": {
+                "direction": browser_scroll_match.group(1),
+                "amount": int(browser_scroll_match.group(2) or 100),
+            },
+        }
+
+    if re.match(r"ブラウザ操作:\s+スクリーンショット$", user_input):
+        return {
+            "task_type": "browser",
+            "action": "screenshot",
+            "params": {},
         }
 
     # DB実行パターン

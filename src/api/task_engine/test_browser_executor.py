@@ -6,7 +6,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from browser_executor import BrowserExecutor
+from api.task_engine.browser_executor import BrowserExecutor
 
 
 @pytest.fixture

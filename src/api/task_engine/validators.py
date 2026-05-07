@@ -4,6 +4,7 @@
 """
 
 import re
+import shlex
 from typing import Tuple
 
 
@@ -53,6 +54,28 @@ def validate_cli_command(command: str) -> Tuple[bool, str]:
     if not command or not isinstance(command, str):
         return False, "コマンドが指定されていません"
 
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        return False, f"コマンド解析エラー: {exc}"
+    allowed_prefixes = {
+        ("npm", "run", "build"),
+        ("npm", "run", "dev"),
+        ("npm", "test"),
+        ("npm", "--version"),
+        ("git", "status"),
+        ("git", "log"),
+        ("git", "diff"),
+        ("python",),
+        ("python3",),
+        ("pip",),
+        ("pip3",),
+        ("ruff", "check"),
+        ("ruff", "format"),
+    }
+    if not any(tuple(parts[: len(prefix)]) == prefix for prefix in allowed_prefixes):
+        return False, "危険または未許可の CLI コマンドです"
+
     # 危険なコマンドパターン検出
     dangerous_patterns = [
         (r";\s*(DROP|drop)", "SQL DROP 検出"),
@@ -65,8 +88,7 @@ def validate_cli_command(command: str) -> Tuple[bool, str]:
             r"(curl|wget)\s+.*\|\s*(bash|sh|cmd|python)",
             "ネットワーク経由コード実行検出",
         ),
-        (r"'OR'\s*'1'\s*'='\s*'1", "SQL インジェクション（シングルクォート）"),
-        (r'"OR"\s*"1"\s*"="\s*"1', "SQL インジェクション（ダブルクォート）"),
+        (r"OR\s+['\"]?1['\"]?\s*=\s*['\"]?1['\"]?", "SQL インジェクション"),
         (r"UNION\s+SELECT", "UNION SELECT インジェクション"),
         (r"(exec|execute|xp_cmdshell)", "DB プロシージャ実行"),
         (r"rm\s+-rf", "rm -rf コマンド検出"),
@@ -109,8 +131,7 @@ def validate_db_query(query: str, params: dict) -> Tuple[bool, str]:
     dangerous_patterns = [
         (r"\bDROP\s+(TABLE|DATABASE|SCHEMA)", "DROP ステートメント検出"),
         (r"\bDELETE\s+FROM\s+\w+\s*;?\s*$", "全行削除 DELETE 検出"),
-        (r"'OR'\s*'1'\s*'='\s*'1", "OR 1=1 インジェクション"),
-        (r'"OR"\s*"1"\s*"="\s*"1', "OR 1=1 インジェクション（ダブルクォート）"),
+        (r"OR\s+['\"]?1['\"]?\s*=\s*['\"]?1['\"]?", "OR 1=1 インジェクション"),
         (r"UNION\s+SELECT", "UNION SELECT インジェクション"),
         (r"\b(EXEC|EXECUTE)\s*\(", "EXEC/EXECUTE プロシージャ実行"),
         (r"xp_cmdshell", "SQL Server xp_cmdshell 実行"),

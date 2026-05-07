@@ -6,7 +6,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from file_executor import FileExecutor
+from api.task_engine.file_executor import FileExecutor
 
 
 @pytest.fixture

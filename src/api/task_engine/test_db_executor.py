@@ -5,7 +5,7 @@ db_executor.py のテストモジュール
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from db_executor import DBExecutor
+from api.task_engine.db_executor import DBExecutor
 
 
 @pytest.mark.asyncio

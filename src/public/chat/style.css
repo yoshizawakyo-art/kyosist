@@ -246,3 +246,276 @@
   word-break: break-word;
   white-space: pre-wrap;
 }
+
+/* ════ Task Executor Section ════ */
+
+#task-section {
+  padding: 20px 24px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+#task-section h2 {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.task-form label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.task-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  resize: vertical;
+}
+
+.task-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--r-md);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--text-tertiary);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Task Result */
+
+.task-result {
+  padding: 12px;
+  margin: 12px 0;
+  border-radius: var(--r-md);
+  border-left: 4px solid #3b82f6;
+}
+
+.task-result.success {
+  background: #ecfdf5;
+  border-left-color: #10b981;
+  color: #065f46;
+}
+
+.task-result.error {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+  color: #7f1d1d;
+}
+
+.task-result.loading {
+  background: #eff6ff;
+  border-left-color: #3b82f6;
+  color: #1e40af;
+}
+
+.result-item {
+  margin: 0;
+}
+
+.result-item h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.result-item p {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.result-body {
+  display: grid;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.result-body pre {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  white-space: pre-wrap;
+}
+
+.task-screenshot,
+.task-browser-frame {
+  width: 100%;
+  max-height: 280px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: #fff;
+}
+
+.task-screenshot {
+  object-fit: contain;
+}
+
+.task-browser-frame {
+  min-height: 220px;
+}
+
+.spinner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spinner-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; transform: scale(1); }
+}
+
+/* History */
+
+#task-history {
+  margin-top: 20px;
+}
+
+#task-history h3,
+#task-skills h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#task-skills {
+  margin-top: 20px;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item {
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+}
+
+.history-item:hover {
+  background: var(--input-bg);
+  border-color: var(--accent);
+}
+
+.history-item-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+
+.history-type {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.history-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.history-item.status-success .history-status {
+  background: #10b981;
+  color: white;
+}
+
+.history-item.status-error .history-status {
+  background: #ef4444;
+  color: white;
+}
+
+.history-time {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.history-input {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

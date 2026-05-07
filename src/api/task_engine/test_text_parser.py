@@ -3,7 +3,7 @@ text_parser.py のテストモジュール
 """
 
 import pytest
-from text_parser import parse_task_input
+from api.task_engine.text_parser import parse_task_input
 
 
 def test_parse_file_create():
