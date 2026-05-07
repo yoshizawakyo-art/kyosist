@@ -4,6 +4,7 @@ CLI コマンド実行（ホワイトリスト方式）のモジュール
 """
 
 import asyncio
+import shlex
 import time
 from typing import Any, Dict
 
@@ -12,12 +13,20 @@ class CLIExecutor:
     """CLI コマンドを実行するクラス"""
 
     # ホワイトリスト
-    ALLOWED_COMMANDS = {
-        "npm": ["run", "build", "dev", "test", "install"],
-        "git": ["status", "log", "diff", "add", "commit", "push", "pull"],
-        "python": [],  # すべてのpython引数を許可
-        "pip": ["install", "list", "show"],
-        "ruff": ["check", "format"],
+    ALLOWED_PATTERNS = {
+        ("npm", "run", "build"),
+        ("npm", "run", "dev"),
+        ("npm", "test"),
+        ("npm", "--version"),
+        ("git", "status"),
+        ("git", "log"),
+        ("git", "diff"),
+        ("python",),
+        ("python3",),
+        ("pip",),
+        ("pip3",),
+        ("ruff", "check"),
+        ("ruff", "format"),
     }
 
     TIMEOUT_SECONDS = 30
@@ -36,33 +45,23 @@ class CLIExecutor:
         if not command:
             return False, "コマンドが指定されていません"
 
-        parts = command.strip().split()
+        try:
+            parts = shlex.split(command)
+        except ValueError as exc:
+            return False, f"コマンドの解析に失敗しました: {exc}"
+
         if not parts:
             return False, "コマンドが空です"
 
-        base_cmd = parts[0]
+        for pattern in CLIExecutor.ALLOWED_PATTERNS:
+            if tuple(parts[: len(pattern)]) == pattern:
+                return True, ""
 
-        # ホワイトリストに存在しないコマンド
-        if base_cmd not in CLIExecutor.ALLOWED_COMMANDS:
-            return (
-                False,
-                f"未許可のコマンド: {base_cmd}。"
-                f"許可されたコマンド: {', '.join(CLIExecutor.ALLOWED_COMMANDS.keys())}",
-            )
+        allowed = ", ".join(" ".join(pattern) for pattern in sorted(CLIExecutor.ALLOWED_PATTERNS))
+        if parts[0] not in {pattern[0] for pattern in CLIExecutor.ALLOWED_PATTERNS}:
+            return False, f"未許可のコマンド: {parts[0]}。許可されたコマンド: {allowed}"
 
-        allowed_args = CLIExecutor.ALLOWED_COMMANDS[base_cmd]
-
-        # 引数チェック（許可リストが空でない場合）
-        if allowed_args and len(parts) > 1:
-            first_arg = parts[1]
-            if first_arg not in allowed_args:
-                return (
-                    False,
-                    f"未許可の引数: {first_arg}。"
-                    f"許可されたコマンド: {base_cmd} {', '.join(allowed_args)}",
-                )
-
-        return True, ""
+        return False, f"未許可の引数: {' '.join(parts[1:])}。許可されたコマンド: {allowed}"
 
     async def execute(self, command: str) -> Dict[str, Any]:
         """
@@ -72,7 +71,7 @@ class CLIExecutor:
             command: 実行するコマンド
 
         Returns:
-            {"status": "success"/"error", "command": str, "stdout": str, "stderr": str, "exit_code": int, "duration_ms": int}
+            実行結果。標準出力・標準エラー・終了コード・実行時間を含む。
         """
         allowed, error_msg = self._is_command_allowed(command)
         if not allowed:
@@ -87,9 +86,9 @@ class CLIExecutor:
 
         start_time = time.time()
         try:
-            # asyncio.create_subprocess_shell を使用
-            process = await asyncio.create_subprocess_shell(
-                command,
+            parts = shlex.split(command)
+            process = await asyncio.create_subprocess_exec(
+                *parts,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

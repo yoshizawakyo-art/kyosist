@@ -4,7 +4,7 @@ cli_executor.py のテストモジュール
 
 import pytest
 
-from cli_executor import CLIExecutor
+from api.task_engine.cli_executor import CLIExecutor
 
 
 @pytest.mark.asyncio

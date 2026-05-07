@@ -5,7 +5,8 @@ DROP/ALTER/TRUNCATE はブロック
 バインド変数（パラメータ化クエリ）を必須化
 """
 
-from typing import Any, Dict, Optional, List
+import re
+from typing import Any, Dict, List, Optional
 
 # Supabase クライアントは使用環境で import される想定
 # from supabase import create_client
@@ -54,7 +55,7 @@ class DBExecutor:
 
         # ブロックキーワードをチェック
         for keyword in DBExecutor.BLOCKED_KEYWORDS:
-            if keyword in query_upper:
+            if re.search(rf"\b{keyword}\b", query_upper):
                 return False, f"未許可のキーワード: {keyword}"
 
         # クエリタイプを抽出
@@ -66,6 +67,9 @@ class DBExecutor:
                 f"未許可のクエリタイプ: {query_type}。"
                 f"許可されたタイプ: {', '.join(DBExecutor.ALLOWED_QUERY_TYPES)}",
             )
+
+        if query_type in {"UPDATE", "DELETE"} and " WHERE " not in f" {query_upper} ":
+            return False, f"{query_type} には WHERE 条件が必要です"
 
         return True, None
 
@@ -93,6 +97,16 @@ class DBExecutor:
                 "affected_count": 0,
             }
 
+        query_type = query.strip().split()[0].upper() if query.strip() else ""
+        if query_type in {"INSERT", "UPDATE", "DELETE"} and not params:
+            return {
+                "status": "error",
+                "query": query,
+                "message": "INSERT/UPDATE/DELETE はバインドパラメータが必要です",
+                "rows": [],
+                "affected_count": 0,
+            }
+
         # Supabase クライアントが設定されていない場合
         if not self.client:
             return {
@@ -104,14 +118,21 @@ class DBExecutor:
             }
 
         try:
-            # パラメータがある場合は RPC 呼び出し、ない場合は直接実行
-            # Supabase の Python SDK では sql() メソッドで直接クエリを実行
-            if params:
-                # パラメータ化クエリの実行
-                # Supabase SDK では postgreSql() を使用してクエリを実行
+            if hasattr(self.client, "postgrest") and hasattr(
+                self.client.postgrest, "query"
+            ):
+                if params:
+                    response = await self.client.postgrest.query(query, params)
+                else:
+                    response = await self.client.postgrest.query(query)
+            elif hasattr(self.client, "rpc"):
+                response = self.client.rpc(
+                    "execute_task_sql",
+                    {"sql_query": query, "sql_params": params or {}},
+                ).execute()
+            elif params:
                 response = await self.client.postgrest.query(query, params)
             else:
-                # パラメータなしの実行（SELECT のみ推奨）
                 response = await self.client.postgrest.query(query)
 
             # レスポンス処理

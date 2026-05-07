@@ -1,11 +1,13 @@
-"""
-Playwr ightを使用してブラウザセッションを管理し、操作を実行するモジュール
-"""
+"""Playwright を使用してブラウザセッションを管理し、操作を実行するモジュール。"""
 
 import base64
 from typing import Any, Dict, Optional
 
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+try:
+    from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+except ImportError:  # pragma: no cover - runtime dependency is optional in unit tests
+    Browser = BrowserContext = Page = Any
+    async_playwright = None
 
 
 class BrowserExecutor:
@@ -13,14 +15,17 @@ class BrowserExecutor:
 
     def __init__(self):
         """初期化"""
+        self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
 
     async def launch(self) -> None:
         """ブラウザを起動"""
-        playwright = await async_playwright().start()
-        self.browser = await playwright.chromium.launch(headless=True)
+        if async_playwright is None:
+            raise RuntimeError("Playwright がインストールされていません")
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(headless=True)
         self.context = await self.browser.new_context()
         self.page = await self.context.new_page()
 
@@ -32,6 +37,17 @@ class BrowserExecutor:
             await self.context.close()
         if self.browser:
             await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
+        self.page = None
+        self.context = None
+        self.browser = None
+        self.playwright = None
+
+    async def close_session(self) -> Dict[str, Any]:
+        """ブラウザセッションを閉じる。"""
+        await self.close()
+        return {"status": "success", "action": "close_session", "message": "セッションを閉じました"}
 
     async def _ensure_browser(self) -> None:
         """ブラウザが起動していることを確認"""
@@ -54,15 +70,17 @@ class BrowserExecutor:
             action = operation.get("action")
 
             if action == "click":
-                return await self._click(operation)
+                return await self.click(operation.get("selector", ""))
             elif action == "input_text":
-                return await self._input_text(operation)
+                return await self.input_text(operation.get("selector", ""), operation.get("text"))
             elif action == "scroll":
-                return await self._scroll(operation)
+                return await self.scroll(
+                    operation.get("direction", "down"), operation.get("amount", 100)
+                )
             elif action == "navigate":
-                return await self._navigate(operation)
+                return await self.navigate(operation.get("url", ""))
             elif action == "screenshot":
-                return await self._screenshot(operation)
+                return await self.screenshot()
             else:
                 return {
                     "status": "error",
@@ -76,9 +94,8 @@ class BrowserExecutor:
                 "message": f"エラー発生: {str(exc)}",
             }
 
-    async def _click(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+    async def click(self, selector: str) -> Dict[str, Any]:
         """要素をクリック"""
-        selector = operation.get("selector")
         if not selector:
             return {
                 "status": "error",
@@ -87,11 +104,14 @@ class BrowserExecutor:
             }
 
         try:
+            await self._ensure_browser()
             await self.page.click(selector)
+            screenshot = await self._capture_screenshot()
             return {
                 "status": "success",
                 "action": "click",
                 "selector": selector,
+                "screenshot": screenshot,
                 "message": f"要素 {selector} をクリックしました",
             }
         except Exception as exc:
@@ -102,11 +122,8 @@ class BrowserExecutor:
                 "message": f"クリック失敗: {str(exc)}",
             }
 
-    async def _input_text(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+    async def input_text(self, selector: str, text: Any) -> Dict[str, Any]:
         """テキスト入力"""
-        selector = operation.get("selector")
-        text = operation.get("text")
-
         if not selector:
             return {
                 "status": "error",
@@ -121,12 +138,15 @@ class BrowserExecutor:
             }
 
         try:
+            await self._ensure_browser()
             await self.page.fill(selector, str(text))
+            screenshot = await self._capture_screenshot()
             return {
                 "status": "success",
                 "action": "input_text",
                 "selector": selector,
                 "text": str(text),
+                "screenshot": screenshot,
                 "message": f"要素 {selector} に入力しました",
             }
         except Exception as exc:
@@ -137,12 +157,10 @@ class BrowserExecutor:
                 "message": f"入力失敗: {str(exc)}",
             }
 
-    async def _scroll(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+    async def scroll(self, direction: str = "down", amount: int = 100) -> Dict[str, Any]:
         """スクロール"""
-        direction = operation.get("direction", "down")
-        amount = operation.get("amount", 100)
-
         try:
+            await self._ensure_browser()
             if direction == "down":
                 await self.page.evaluate(f"window.scrollBy(0, {amount})")
             elif direction == "up":
@@ -158,11 +176,13 @@ class BrowserExecutor:
                     "message": f"未サポートの方向: {direction}",
                 }
 
+            screenshot = await self._capture_screenshot()
             return {
                 "status": "success",
                 "action": "scroll",
                 "direction": direction,
                 "amount": amount,
+                "screenshot": screenshot,
                 "message": f"{direction}方向に{amount}px スクロールしました",
             }
         except Exception as exc:
@@ -172,9 +192,8 @@ class BrowserExecutor:
                 "message": f"スクロール失敗: {str(exc)}",
             }
 
-    async def _navigate(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+    async def navigate(self, url: str) -> Dict[str, Any]:
         """ページナビゲーション"""
-        url = operation.get("url")
         if not url:
             return {
                 "status": "error",
@@ -183,11 +202,14 @@ class BrowserExecutor:
             }
 
         try:
+            await self._ensure_browser()
             await self.page.goto(url)
+            screenshot = await self._capture_screenshot()
             return {
                 "status": "success",
                 "action": "navigate",
                 "url": url,
+                "screenshot": screenshot,
                 "message": f"ページを {url} に移動しました",
             }
         except Exception as exc:
@@ -198,11 +220,11 @@ class BrowserExecutor:
                 "message": f"ナビゲーション失敗: {str(exc)}",
             }
 
-    async def _screenshot(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+    async def screenshot(self) -> Dict[str, Any]:
         """スクリーンショット（base64返却）"""
         try:
-            screenshot_bytes = await self.page.screenshot()
-            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            await self._ensure_browser()
+            screenshot_base64 = await self._capture_screenshot()
             return {
                 "status": "success",
                 "action": "screenshot",
@@ -215,3 +237,7 @@ class BrowserExecutor:
                 "action": "screenshot",
                 "message": f"スクリーンショット取得失敗: {str(exc)}",
             }
+
+    async def _capture_screenshot(self) -> str:
+        screenshot_bytes = await self.page.screenshot()
+        return base64.b64encode(screenshot_bytes).decode("utf-8")

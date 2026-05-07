@@ -9,7 +9,7 @@ from pathlib import Path
 # validators モジュールのインポートパスを追加
 sys.path.insert(0, str(Path(__file__).parent))
 
-from validators import (
+from api.task_engine.validators import (
     validate_browser_selector,
     validate_cli_command,
     validate_db_query,
