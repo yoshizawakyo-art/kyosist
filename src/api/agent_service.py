@@ -1,7 +1,7 @@
 """
 ReAct (Thought/Action/Observation) 自律エージェントサービス。
 
-Google Generative AI (Gemini Flash-Lite) を推論エンジンとして使用し、以下のツールを呼び出す:
+Gemini 2.5 Flash-Lite を推論エンジンとして使用し、以下のツールを呼び出す:
   - web_search  : Tavily API でウェブ検索
   - notion_write: Notion API でデータベースに書き込み
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 MAX_ITERATIONS = 10
 MAX_SEARCH_RESULTS = 5
 GEMINI_MAX_RETRIES = 5
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 SYSTEM_PROMPT = """\
 あなたは自律的なAIリサーチアシスタントです。ユーザーのリクエストを達成するために
@@ -196,33 +197,75 @@ async def skill_call(skill_name: str, input_text: str, skills: list[dict]) -> st
             return f"スキル「{skill_name}」の実行エラー: {e}"
 
 
-# ── Gemini 呼び出し ─────────────────────────────────────────────
+# ── Gemini 呼び出し ────────────────────────────────────────────
 
 
-def _gemini_text(response: Any) -> str:
+def get_gemini_model() -> str:
+    """環境変数で上書き可能な Gemini モデルIDを返す。"""
+    return os.environ.get("GEMINI_MODEL", GEMINI_MODEL)
+
+
+def create_gemini_client() -> Any:
+    """Google Gen AI SDK の Gemini クライアントを作成する。"""
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY が設定されていません")
+
     try:
-        return response.text or ""
-    except Exception:
-        parts: list[str] = []
-        for candidate in getattr(response, "candidates", []) or []:
-            content = getattr(candidate, "content", None)
-            for part in getattr(content, "parts", []) or []:
-                text = getattr(part, "text", "")
-                if text:
-                    parts.append(text)
-        return "".join(parts)
+        from google import genai
+    except ImportError as exc:
+        raise RuntimeError("google-genai パッケージが未インストールです") from exc
+
+    return genai.Client(api_key=api_key)
 
 
-async def _call_gemini_with_retry(gemini_model: Any, prompt: str) -> str:
+async def generate_gemini_text(
+    gemini_client: Any,
+    prompt: str,
+    *,
+    temperature: float = 0.7,
+    max_output_tokens: int = 2048,
+) -> str:
+    """Gemini から単発テキスト応答を取得する。"""
+    response = await gemini_client.aio.models.generate_content(
+        model=get_gemini_model(),
+        contents=prompt,
+        config={
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        },
+    )
+    return response.text or ""
+
+
+async def stream_gemini_text(
+    gemini_client: Any,
+    prompt: str,
+    *,
+    temperature: float = 0.7,
+):
+    """Gemini のストリーミング応答からテキスト差分を yield する。"""
+    stream = await gemini_client.aio.models.generate_content_stream(
+        model=get_gemini_model(),
+        contents=prompt,
+        config={"temperature": temperature},
+    )
+    async for chunk in stream:
+        text = chunk.text or ""
+        if text:
+            yield text
+
+
+async def _call_gemini_with_retry(gemini_client: Any, prompt: str) -> str:
     """指数バックオフ付きで Gemini API を呼び出す。"""
     for attempt in range(GEMINI_MAX_RETRIES):
         try:
-            response = await asyncio.to_thread(
-                gemini_model.generate_content,
+            return await generate_gemini_text(
+                gemini_client,
                 prompt,
-                generation_config={"max_output_tokens": 2048},
+                temperature=0.7,
+                max_output_tokens=2048,
             )
-            return _gemini_text(response)
         except Exception as exc:
             err_str = str(exc).lower()
             is_retriable = any(
@@ -322,7 +365,7 @@ def _save_step(client: Client, message_id: str, step: AgentStep) -> None:
 
 async def run_agent(
     user_message: str,
-    gemini_model: Any,
+    gemini_client: Any,
     supabase_client: Client,
     message_id: str,
     skills: list[dict] | None = None,
@@ -339,7 +382,7 @@ async def run_agent(
         prompt = _build_system_prompt(skills) + "\n\n" + "\n".join(history)
 
         try:
-            llm_output = await _call_gemini_with_retry(gemini_model, prompt)
+            llm_output = await _call_gemini_with_retry(gemini_client, prompt)
         except Exception as exc:
             error_step = AgentStep(
                 step_type="observation",

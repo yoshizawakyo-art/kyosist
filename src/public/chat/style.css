@@ -52,7 +52,7 @@
 }
 .input-box:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 4px 24px rgba(124, 110, 240, 0.14);
+  box-shadow: 0 4px 24px rgba(16, 185, 129, 0.16);
 }
 
 /* ════ Chat view ════ */
@@ -96,7 +96,7 @@
   font-weight: 700;
   margin-top: 2px;
 }
-.msg-row.user .avatar { background: linear-gradient(135deg, var(--accent), #b06ef0); color: #fff; }
+.msg-row.user .avatar { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
 .msg-row.bot  .avatar { background: var(--bot-bubble); color: var(--accent); }
 
 .bubble {
@@ -162,14 +162,14 @@
 }
 .bottom-box:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 2px 14px rgba(124, 110, 240, 0.12);
+  box-shadow: 0 2px 14px rgba(16, 185, 129, 0.14);
 }
 
 /* ════ Chat-specific color vars ════ */
 :root {
-  --user-bubble: #7c6ef0;
-  --bot-bubble:  #eeecf8;
-  --bot-text:    #2a2840;
+  --user-bubble: #10b981;
+  --bot-bubble:  #e6f7f0;
+  --bot-text:    #1a3826;
 }
 
 /* ════ Agent thinking process ════ */
@@ -203,7 +203,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-left: 2px solid #e0dcf8;
+  border-left: 2px solid #b7e4cf;
   padding-left: 10px;
 }
 .agent-steps.hidden { display: none; }
@@ -218,7 +218,7 @@
   line-height: 1.5;
 }
 
-.agent-step.thought     { background: #f0f0ff; }
+.agent-step.thought     { background: #eefaf4; }
 .agent-step.action      { background: #f0fff4; }
 .agent-step.observation { background: #fffbf0; }
 .agent-step.error       { background: #fff0f0; }
@@ -235,7 +235,7 @@
   text-transform: uppercase;
   margin-bottom: 2px;
 }
-.thought     .step-label { color: #6355c7; }
+.thought     .step-label { color: #047857; }
 .action      .step-label { color: #1e7a4a; }
 .observation .step-label { color: #8a6200; }
 .error       .step-label { color: #c0392b; }
@@ -519,3 +519,40 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+@media (max-width: 720px) {
+  #welcome {
+    width: 100%;
+    padding: 32px 18px 48px;
+    gap: 22px;
+  }
+
+  .welcome-heading {
+    font-size: 1.55rem;
+  }
+
+  .input-box {
+    width: min(290px, calc(100vw - 36px));
+    max-width: min(290px, calc(100vw - 36px));
+  }
+
+  .chips {
+    width: min(290px, calc(100vw - 36px));
+    max-width: min(290px, calc(100vw - 36px));
+    justify-content: center;
+    flex-wrap: wrap;
+    padding-bottom: 2px;
+  }
+
+  #messages {
+    padding: 22px 18px 14px;
+  }
+
+  .bubble,
+  .agent-process {
+    max-width: calc(100vw - 86px);
+  }
+
+  #bottom-bar {
+    padding: 10px 18px 18px;
+  }

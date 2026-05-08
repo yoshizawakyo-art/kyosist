@@ -51,52 +51,30 @@ try:
 except ImportError:  # pragma: no cover - handled at runtime with a clear API error
     bcrypt = None
 
-from . import automation_service
-from .agent_service import build_agent_event, run_agent
+from api import automation_service
+from api.agent_service import (
+    build_agent_event,
+    create_gemini_client,
+    generate_gemini_text,
+    run_agent,
+    stream_gemini_text,
+)
 
 logger = logging.getLogger(__name__)
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
-GEMINI_MODEL = "gemini-2.0-flash-lite"
-GEMINI_SYSTEM_PROMPT = "You are Kyosist, a concise and helpful AI assistant."
-_STREAM_DONE = object()
+MAX_CHAT_CONTEXT_MESSAGES = 30
+CHAT_SYSTEM_PROMPT = """\
+あなたは「Kyosist（キョシスト）」というAIアシスタントです。
+以下のルールに従って応答してください。
 
-
-def _get_google_api_key() -> str:
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY is not configured")
-    return api_key
-
-
-def _configure_gemini(api_key: str) -> None:
-    genai.configure(api_key=api_key)
-
-
-def _gemini_model(system_instruction: str | None = None):
-    return genai.GenerativeModel(
-        os.environ.get("GEMINI_MODEL", GEMINI_MODEL),
-        system_instruction=system_instruction,
-    )
-
-
-def _gemini_text(response) -> str:
-    try:
-        return response.text or ""
-    except Exception:
-        parts: list[str] = []
-        for candidate in getattr(response, "candidates", []) or []:
-            content = getattr(candidate, "content", None)
-            for part in getattr(content, "parts", []) or []:
-                text = getattr(part, "text", "")
-                if text:
-                    parts.append(text)
-        return "".join(parts)
-
-
-def _next_stream_chunk(iterator):
-    return next(iterator, _STREAM_DONE)
+- 常に日本語で応答する
+- 簡潔で分かりやすい表現を使う
+- ユーザーに寄り添う親切なトーンで答える
+- 業務整理、調査、文章作成、実装相談を実務的に支援する
+- 不確かな情報は断定せず、「確認が必要です」と伝える
+""".strip()
 
 
 def _get_jwt_secret_key() -> str:
@@ -493,12 +471,24 @@ def get_supabase_client() -> Client:
     例外:
       KeyError: 環境変数が設定されていない場合に発生。
     """
-    # 環境変数から Supabase の URL と API キーを取得
-    url: str = os.environ["SUPABASE_URL"]
-    key: str = os.environ["SUPABASE_ANON_KEY"]
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_ANON_KEY")
+    if not url or not key:
+        logger.error("Supabase configuration is missing")
+        raise HTTPException(
+            status_code=503,
+            detail="データベース接続設定が不足しています。管理者に連絡してください。",
+        )
 
     # 取得した認証情報でクライアントを生成・返却
-    return create_client(url, key)
+    try:
+        return create_client(url, key)
+    except Exception as exc:
+        logger.error("Supabase client creation failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="データベースに接続できません。しばらくしてから再度お試しください。",
+        ) from exc
 
 
 def _fetch_user_by_email(client: Client, email: str) -> Optional[dict]:
@@ -727,16 +717,26 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
     例外:
       HTTPException(500) : データベース操作失敗時
     """
-    # 空オブジェクト {} を挿入（Supabase が自動フィールドを生成）
-    payload = {}
-    if user_id is not None:
-        payload["user_id"] = user_id
+    if user_id is None:
+        raise HTTPException(
+            status_code=400, detail="ログイン情報を確認できませんでした"
+        )
 
-    result = client.table("conversations").insert(payload).execute()
+    try:
+        result = client.table("conversations").insert({"user_id": user_id}).execute()
+    except Exception as exc:
+        logger.error("conversation insert failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話を作成できませんでした。時間をおいて再度お試しください。",
+        ) from exc
 
-    # 結果チェック：データが取得できなかった場合はエラー
     if not result.data:
-        raise HTTPException(status_code=500, detail="会話の作成に失敗しました")
+        logger.error("conversation insert returned no data")
+        raise HTTPException(
+            status_code=503,
+            detail="会話を作成できませんでした。時間をおいて再度お試しください。",
+        )
 
     # 最初のレコード（実際には1件のみ）を返す
     return result.data[0]
@@ -744,25 +744,43 @@ def _insert_conversation(client: Client, user_id: str | None = None) -> dict:
 
 def _fetch_conversations(client: Client, user_id: str | None = None) -> list[dict]:
     """Fetch recent conversations, optionally scoped to a user."""
-    query = client.table("conversations").select("*")
-    if user_id is not None:
-        query = query.eq("user_id", user_id)
+    if user_id is None:
+        raise HTTPException(
+            status_code=400, detail="ログイン情報を確認できませんでした"
+        )
 
-    result = query.order("updated_at", desc=True).limit(50).execute()
-    return result.data
+    query = client.table("conversations").select("*")
+    query = query.eq("user_id", user_id)
+
+    try:
+        result = query.order("updated_at", desc=True).limit(50).execute()
+    except Exception as exc:
+        logger.error("conversation fetch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話履歴を読み込めませんでした。時間をおいて再度お試しください。",
+        ) from exc
+    return result.data or []
 
 
 def _fetch_conversation(
     client: Client, conversation_id: str, user_id: str
 ) -> Optional[dict]:
-    result = (
-        client.table("conversations")
-        .select("*")
-        .eq("id", conversation_id)
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
+    try:
+        result = (
+            client.table("conversations")
+            .select("*")
+            .eq("id", conversation_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("conversation lookup failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話を確認できませんでした。時間をおいて再度お試しください。",
+        ) from exc
     return result.data[0] if result.data else None
 
 
@@ -782,14 +800,21 @@ def _fetch_messages(client: Client, conversation_id: str) -> list[dict]:
       list[dict] : 該当するメッセージレコードのリスト。
                   作成日時の古い順に並んでいます。
     """
-    result = (
-        client.table("messages")
-        .select("*")  # すべてのカラムを選択
-        .eq("conversation_id", conversation_id)  # 指定会話IDで絞込
-        .order("created_at")  # 作成日時で古い順にソート
-        .execute()
-    )
-    return result.data
+    try:
+        result = (
+            client.table("messages")
+            .select("*")  # すべてのカラムを選択
+            .eq("conversation_id", conversation_id)  # 指定会話IDで絞込
+            .order("created_at")  # 作成日時で古い順にソート
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("message fetch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージ履歴を読み込めませんでした。時間をおいて再度お試しください。",
+        ) from exc
+    return result.data or []
 
 
 def _insert_message(
@@ -815,13 +840,26 @@ def _insert_message(
     例外:
       HTTPException(500) : データベース操作失敗時
     """
-    result = (
-        client.table("messages")
-        .insert({"conversation_id": conversation_id, "role": role, "content": content})
-        .execute()
-    )
+    try:
+        result = (
+            client.table("messages")
+            .insert(
+                {"conversation_id": conversation_id, "role": role, "content": content}
+            )
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("message insert failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージを保存できませんでした。時間をおいて再度お試しください。",
+        ) from exc
     if not result.data:
-        raise HTTPException(status_code=500, detail="メッセージの保存に失敗しました")
+        logger.error("message insert returned no data")
+        raise HTTPException(
+            status_code=503,
+            detail="メッセージを保存できませんでした。時間をおいて再度お試しください。",
+        )
     return result.data[0]
 
 
@@ -840,10 +878,16 @@ def _touch_conversation(client: Client, conversation_id: str) -> None:
     戻り値:
       None（戻り値なし）
     """
-    # 指定会話の updated_at を現在時刻（now()）に更新
-    client.table("conversations").update({"updated_at": "now()"}).eq(
-        "id", conversation_id
-    ).execute()
+    try:
+        client.table("conversations").update({"updated_at": "now()"}).eq(
+            "id", conversation_id
+        ).execute()
+    except Exception as exc:
+        logger.error("conversation touch failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="会話の更新に失敗しました。時間をおいて再度お試しください。",
+        ) from exc
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -929,6 +973,23 @@ def _build_skill_draft_from_text(message: str) -> Optional[dict]:
         "action_method": "POST",
         "action_body_template": '{"input":"{input}"}',
     }
+
+
+def _build_chat_prompt(history_rows: list[dict], user_message: str) -> str:
+    """Gemini に渡すチャット履歴プロンプトを組み立てる。"""
+    recent_rows = history_rows[-MAX_CHAT_CONTEXT_MESSAGES:]
+    lines = [
+        f"System: {CHAT_SYSTEM_PROMPT}",
+        "",
+        "Conversation history:",
+    ]
+    for row in recent_rows:
+        role = "Assistant" if row.get("role") == "bot" else "User"
+        content = row.get("content")
+        if content:
+            lines.append(f"{role}: {content}")
+    lines.extend(["", f"User: {user_message}", "Assistant:"])
+    return "\n".join(lines)
 
 
 def _month_to_date(target_month: str) -> str:
@@ -1157,8 +1218,10 @@ async def chat(
     req: ChatRequest,
     current_user: dict = Depends(get_current_auth_context),
 ) -> StreamingResponse:
-    google_key = _get_google_api_key()
-    _configure_gemini(google_key)
+    try:
+        gemini_client = create_gemini_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     client = current_user["client"]
     user_id = current_user["user"]["id"]
@@ -1178,31 +1241,16 @@ async def chat(
             raise HTTPException(status_code=404, detail="Conversation not found")
 
     history_rows = await asyncio.to_thread(_fetch_messages, client, conv_id)
-    gemini_contents = []
-    for row in history_rows:
-        role = "model" if row.get("role") == "bot" else "user"
-        content = row.get("content")
-        if content:
-            gemini_contents.append({"role": role, "parts": [content]})
-    gemini_contents.append({"role": "user", "parts": [req.message]})
+    prompt = _build_chat_prompt(history_rows, req.message)
 
     async def event_stream():
         final_reply = ""
         try:
-            model = _gemini_model(system_instruction=GEMINI_SYSTEM_PROMPT)
-            stream = await asyncio.to_thread(
-                model.generate_content,
-                gemini_contents,
-                generation_config={"temperature": 0.7},
-                stream=True,
-            )
-            while True:
-                chunk = await asyncio.to_thread(_next_stream_chunk, stream)
-                if chunk is _STREAM_DONE:
-                    break
-                delta = _gemini_text(chunk)
-                if not delta:
-                    continue
+            async for delta in stream_gemini_text(
+                gemini_client,
+                prompt,
+                temperature=0.7,
+            ):
                 final_reply += delta
                 payload = json.dumps({"chunk": delta}, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
@@ -1614,32 +1662,26 @@ async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
 {req.message}
 """.strip()
 
-    google_key = os.environ.get("GOOGLE_API_KEY", "")
     assistant_reply = (
         "暫定のスキル案を作成しました。内容を確認して必要なら修正してください。"
     )
     draft_data = _build_skill_draft_from_text(req.message)
 
-    if google_key:
-        try:
-            _configure_gemini(google_key)
-            model = _gemini_model()
-            result = await asyncio.to_thread(
-                model.generate_content,
-                prompt,
-                generation_config={
-                    "max_output_tokens": 1024,
-                    "temperature": 0.2,
-                },
-            )
-            content = _gemini_text(result)
-            parsed = _extract_json_object(content)
-            if parsed:
-                assistant_reply = parsed.get("reply") or assistant_reply
-                if isinstance(parsed.get("draft"), dict):
-                    draft_data = parsed["draft"]
-        except Exception as exc:
-            logger.warning("skills assistant fallback: %s", exc)
+    try:
+        gemini_client = create_gemini_client()
+        content = await generate_gemini_text(
+            gemini_client,
+            prompt,
+            temperature=0.2,
+            max_output_tokens=1024,
+        )
+        parsed = _extract_json_object(content)
+        if parsed:
+            assistant_reply = parsed.get("reply") or assistant_reply
+            if isinstance(parsed.get("draft"), dict):
+                draft_data = parsed["draft"]
+    except Exception as exc:
+        logger.warning("skills assistant fallback: %s", exc)
 
     if not draft_data:
         raise HTTPException(status_code=400, detail="メッセージが空です")
@@ -1659,23 +1701,37 @@ async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
 
 
 @app.post("/api/agent/chat")
-async def agent_chat(req: ChatRequest) -> StreamingResponse:
+async def agent_chat(
+    req: ChatRequest,
+    current_user: dict = Depends(get_current_auth_context),
+) -> StreamingResponse:
     """
     POST /api/agent/chat
     ReAct エージェントを起動し、思考ステップを SSE でストリーミング返却する。
     ユーザーメッセージと最終回答は messages テーブルに保存される。
     各思考ステップは agent_steps テーブルに記録される。
     """
-    google_key = _get_google_api_key()
-    _configure_gemini(google_key)
-    gemini_model = _gemini_model()
-    supabase = get_supabase_client()
+    try:
+        gemini_client = create_gemini_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    supabase = current_user["client"]
+    user_id = current_user["user"]["id"]
 
     if req.conversation_id is None:
-        conv_row = await asyncio.to_thread(_insert_conversation, supabase)
+        conv_row = await asyncio.to_thread(_insert_conversation, supabase, user_id)
         conv_id: str = conv_row["id"]
     else:
         conv_id = str(req.conversation_id)
+        conversation = await asyncio.to_thread(
+            _fetch_conversation,
+            supabase,
+            conv_id,
+            user_id,
+        )
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="Conversation not found")
 
     user_msg_row = await asyncio.to_thread(
         _insert_message, supabase, conv_id, "user", req.message
@@ -1687,7 +1743,7 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         final_reply = ""
         try:
             async for step in run_agent(
-                req.message, gemini_model, supabase, message_id, skills
+                req.message, gemini_client, supabase, message_id, skills
             ):
                 yield build_agent_event(step, conv_id)
                 if step.step_type == "answer":

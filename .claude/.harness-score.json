@@ -1,0 +1,59 @@
+{
+  "date": "2026-05-07T03:43:23Z",
+  "iteration": 1,
+  "all_pass": true,
+  "weighted_avg": 99.6,
+  "weight_total": 100,
+  "categories": {
+    "C1_claude_md_light": {
+      "weight": 12,
+      "score": 100,
+      "note": "ルート CLAUDE.md 40 行 (≤50 OK)"
+    },
+    "C2_skill_md_lines": {
+      "weight": 8,
+      "score": 100,
+      "note": "全 SKILL.md ≤500 行 (最大 skill-creator 485)"
+    },
+    "C3_description_chars": {
+      "weight": 8,
+      "score": 100,
+      "note": "全 skill description ≤1536 字"
+    },
+    "C4_hook_integrity": {
+      "weight": 12,
+      "score": 100,
+      "note": "NOT injected = 0、PreToolUse hook なし"
+    },
+    "C5_permissions_allow_count": {
+      "weight": 8,
+      "score": 95,
+      "note": "44 件 (許容 ≤45 OK だが理想 30〜40 を 4 件超過 → 軽微逸脱)"
+    },
+    "C6_permissions_deny_multilayer": {
+      "weight": 12,
+      "score": 100,
+      "note": "deny 8 件、git commit/push 両方含む"
+    },
+    "C7_doc_archive_rate": {
+      "weight": 8,
+      "score": 100,
+      "note": "doc/ ルート直下 self-check_* / review-cycle_* / yokotenkai_* = 0 件"
+    },
+    "C8_relative_date_clean": {
+      "weight": 8,
+      "score": 100,
+      "note": "rules/ 配下 0 件 (doc/skill 内は説明文として正当)"
+    },
+    "C9_link_health": {
+      "weight": 12,
+      "score": 100,
+      "note": "SKILL.md 内パス参照 MISSING = 0"
+    },
+    "C10_anti_patterns": {
+      "weight": 12,
+      "score": 100,
+      "note": "12 項目チェック全該当なし"
+    }
+  }
+}

@@ -25,10 +25,15 @@ node_modules/
 Thumbs.db
 
 .vercel
-.claude/
+.claude/*
 !.claude/rules/
 !.claude/agents/
 !.claude/skills/
+!.claude/commands/
+!.claude/hooks/
+!.claude/doc/
+.claude/doc/*
+!.claude/doc/pending-tasks.md
 
 .env*.local
 .worktrees/
