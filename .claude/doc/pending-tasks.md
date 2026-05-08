@@ -354,19 +354,30 @@ M run.py
 - [x] Verified git history cleanup
 
 **Critical Action Required - User**:
-⚠️ **Rotate Supabase credentials immediately:**
+⚠️ **STEP 1: Rotate Supabase credentials immediately:**
 1. Log in to Supabase dashboard: https://app.supabase.com/
 2. Navigate to Project Settings → Database → Change database password
 3. Generate new connection pooler credentials
-4. Update any `.env` files or CI/CD configs with new credentials
-5. Verify local development works with new credentials
+4. Copy new connection string and update:
+   - Local `.env` file
+   - Vercel Project Settings → Environment Variables
+5. Test locally with new credentials
 
-**Verification Pending**:
-- [ ] Supabase credentials rotated on console
-- [ ] Local development confirmed working with new credentials
-- [ ] Supabase cloud database confirmed to have `conversations.user_id` column
-- [ ] Chat creation functionality works without "user_id not found" errors
-- [ ] Production Vercel deployment checked for error resolution
+⚠️ **STEP 2: After rotation, verify locally:**
+```bash
+cd C:/Develop/Projects/Kyosist
+python run.py
+# Server should start without errors
+# Check that conversations can be created
+```
+
+**Verification Status**:
+- [x] git 履歴から認証情報を物理削除 (git filter-repo + force-push 実施済み)
+- [x] Migration 007_conversations_user_id.sql ファイル確認済み
+- [x] Migration 007 を Supabase cloud に適用済み (supabase db push --include-all)
+- [ ] Supabase credentials rotated on console (USER ACTION NEEDED)
+- [ ] Local development confirmed working with new credentials (USER ACTION NEEDED)
+- [ ] Chat creation functionality works without "user_id not found" errors (PENDING)
 
 **Next Steps**:
 1. Complete credential rotation (user action)
