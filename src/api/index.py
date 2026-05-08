@@ -42,6 +42,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from postgrest.exceptions import APIError
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from supabase import Client, create_client
 
@@ -556,8 +557,22 @@ def _insert_user(client: Client, email: str, password_hash: str) -> dict:
         .execute()
     )
     if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to create user")
+        raise ValueError("Failed to create user")
     return result.data[0]
+
+
+def _is_unique_constraint_violation(exc: Exception) -> bool:
+    if isinstance(exc, APIError):
+        values = (exc.code, exc.message, exc.details)
+        return any(
+            value
+            and (
+                value == "23505"
+                or "duplicate key value violates unique constraint" in value.lower()
+            )
+            for value in values
+        )
+    return False
 
 
 def _create_access_token(user_id: str) -> tuple[str, datetime]:
@@ -1011,9 +1026,21 @@ async def signup(req: LoginRequest, request: Request) -> LoginResponse:
     password_hash = await asyncio.to_thread(_hash_password, req.password)
     try:
         user = await asyncio.to_thread(_insert_user, client, req.email, password_hash)
+    except HTTPException:
+        raise
+    except APIError as exc:
+        if _is_unique_constraint_violation(exc):
+            raise HTTPException(
+                status_code=409, detail="Email is already registered"
+            ) from None
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
+    except ValueError as exc:
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
     except Exception as exc:
         logger.error("signup failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create user") from None
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
 
     token, expires_at = _create_access_token(user["id"])
     await asyncio.to_thread(
