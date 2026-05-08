@@ -57,11 +57,16 @@ class CLIExecutor:
             if tuple(parts[: len(pattern)]) == pattern:
                 return True, ""
 
-        allowed = ", ".join(" ".join(pattern) for pattern in sorted(CLIExecutor.ALLOWED_PATTERNS))
+        allowed = ", ".join(
+            " ".join(pattern) for pattern in sorted(CLIExecutor.ALLOWED_PATTERNS)
+        )
         if parts[0] not in {pattern[0] for pattern in CLIExecutor.ALLOWED_PATTERNS}:
             return False, f"未許可のコマンド: {parts[0]}。許可されたコマンド: {allowed}"
 
-        return False, f"未許可の引数: {' '.join(parts[1:])}。許可されたコマンド: {allowed}"
+        return (
+            False,
+            f"未許可の引数: {' '.join(parts[1:])}。許可されたコマンド: {allowed}",
+        )
 
     async def execute(self, command: str) -> Dict[str, Any]:
         """

@@ -26,8 +26,8 @@ def hash_password(password: str) -> str:
         A bcrypt-hashed password string (includes salt)
     """
     salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plaintext_password: str, password_hash: str) -> bool:
@@ -43,8 +43,7 @@ def verify_password(plaintext_password: str, password_hash: str) -> bool:
     """
     try:
         return bcrypt.checkpw(
-            plaintext_password.encode('utf-8'),
-            password_hash.encode('utf-8')
+            plaintext_password.encode("utf-8"), password_hash.encode("utf-8")
         )
     except ValueError:
         return False
@@ -61,7 +60,7 @@ def find_user_by_email(client: Client, email: str) -> dict | None:
     Returns:
         User record dict if found, None otherwise
     """
-    result = client.table('users').select('*').eq('email', email).execute()
+    result = client.table("users").select("*").eq("email", email).execute()
     if result.data:
         return result.data[0]
     return None
@@ -82,19 +81,19 @@ def generate_jwt_token(user_id: str, email: str, expires_in_hours: int = 24) -> 
     Raises:
         ValueError: If JWT_SECRET_KEY environment variable is not set
     """
-    secret_key = os.environ.get('JWT_SECRET_KEY')
+    secret_key = os.environ.get("JWT_SECRET_KEY")
     if not secret_key:
-        raise ValueError('JWT_SECRET_KEY environment variable is not configured')
+        raise ValueError("JWT_SECRET_KEY environment variable is not configured")
 
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=expires_in_hours)
 
     payload = {
-        'sub': user_id,
-        'email': email,
-        'iat': now,
-        'exp': expires_at,
+        "sub": user_id,
+        "email": email,
+        "iat": now,
+        "exp": expires_at,
     }
 
-    token = jwt.encode(payload, secret_key, algorithm='HS256')
+    token = jwt.encode(payload, secret_key, algorithm="HS256")
     return token

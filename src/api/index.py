@@ -37,10 +37,12 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 import jwt
+import google.generativeai as genai
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from postgrest.exceptions import APIError
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from supabase import Client, create_client
 
@@ -526,6 +528,41 @@ def _verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except ValueError:
         return False
+
+
+def _hash_password(password: str) -> str:
+    if bcrypt is None:
+        raise HTTPException(
+            status_code=500,
+            detail="bcrypt dependency is not installed",
+        )
+
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _insert_user(client: Client, email: str, password_hash: str) -> dict:
+    result = (
+        client.table("users")
+        .insert({"email": email, "password_hash": password_hash})
+        .execute()
+    )
+    if not result.data:
+        raise ValueError("Failed to create user")
+    return result.data[0]
+
+
+def _is_unique_constraint_violation(exc: Exception) -> bool:
+    if isinstance(exc, APIError):
+        values = (exc.code, exc.message, exc.details)
+        return any(
+            value
+            and (
+                value == "23505"
+                or "duplicate key value violates unique constraint" in value.lower()
+            )
+            for value in values
+        )
+    return False
 
 
 def _create_access_token(user_id: str) -> tuple[str, datetime]:
@@ -1019,6 +1056,52 @@ async def login(req: LoginRequest, request: Request) -> LoginResponse:
     )
     if not password_ok:
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token, expires_at = _create_access_token(user["id"])
+    await asyncio.to_thread(
+        _insert_session,
+        client,
+        user["id"],
+        token,
+        expires_at,
+        request.headers.get("user-agent"),
+        _request_ip_address(request),
+    )
+
+    public_user = {k: v for k, v in user.items() if k != "password_hash"}
+    return LoginResponse(
+        token=token,
+        access_token=token,
+        expires_at=expires_at.isoformat(),
+        user=AuthUserResponse(**public_user),
+    )
+
+
+@app.post("/api/auth/signup", response_model=LoginResponse, status_code=201)
+async def signup(req: LoginRequest, request: Request) -> LoginResponse:
+    client = get_supabase_client()
+    existing_user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+    if existing_user is not None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+
+    password_hash = await asyncio.to_thread(_hash_password, req.password)
+    try:
+        user = await asyncio.to_thread(_insert_user, client, req.email, password_hash)
+    except HTTPException:
+        raise
+    except APIError as exc:
+        if _is_unique_constraint_violation(exc):
+            raise HTTPException(
+                status_code=409, detail="Email is already registered"
+            ) from None
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
+    except ValueError as exc:
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
+    except Exception as exc:
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from exc
 
     token, expires_at = _create_access_token(user["id"])
     await asyncio.to_thread(
