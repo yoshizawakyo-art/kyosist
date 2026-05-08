@@ -1077,36 +1077,53 @@ def _credential_public(row: dict) -> dict:
 
 @app.post("/api/auth/login", response_model=LoginResponse)
 async def login(req: LoginRequest, request: Request) -> LoginResponse:
-    client = get_supabase_client()
-    user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+    logger.info("login request started: email=%s", req.email)
+    try:
+        logger.info("getting Supabase client")
+        client = get_supabase_client()
+        logger.info("fetching user by email: %s", req.email)
+        user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
 
-    if user is None:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        if user is None:
+            logger.info("user not found: %s", req.email)
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    password_ok = await asyncio.to_thread(
-        _verify_password, req.password, user["password_hash"]
-    )
-    if not password_ok:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        logger.info("verifying password")
+        password_ok = await asyncio.to_thread(
+            _verify_password, req.password, user["password_hash"]
+        )
+        if not password_ok:
+            logger.info("password verification failed: %s", req.email)
+            raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token, expires_at = _create_access_token(user["id"])
-    await asyncio.to_thread(
-        _insert_session,
-        client,
-        user["id"],
-        token,
-        expires_at,
-        request.headers.get("user-agent"),
-        _request_ip_address(request),
-    )
+        logger.info("generating access token")
+        token, expires_at = _create_access_token(user["id"])
+        logger.info("access token generated successfully")
+        logger.info("inserting session")
+        await asyncio.to_thread(
+            _insert_session,
+            client,
+            user["id"],
+            token,
+            expires_at,
+            request.headers.get("user-agent"),
+            _request_ip_address(request),
+        )
+        logger.info("session inserted successfully")
 
-    public_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return LoginResponse(
-        token=token,
-        access_token=token,
-        expires_at=expires_at.isoformat(),
-        user=AuthUserResponse(**public_user),
-    )
+        logger.info("login completed successfully: email=%s", req.email)
+        public_user = {k: v for k, v in user.items() if k != "password_hash"}
+        return LoginResponse(
+            token=token,
+            access_token=token,
+            expires_at=expires_at.isoformat(),
+            user=AuthUserResponse(**public_user),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("unexpected error in login: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Login failed") from exc
 
 
 @app.post("/api/auth/signup", response_model=LoginResponse, status_code=201)
