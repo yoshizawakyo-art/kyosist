@@ -1,0 +1,82 @@
+[
+  {
+    "query": "このスキルを改善したいんだけど、95点まで自動的に上げることはできますか？",
+    "should_trigger": true
+  },
+  {
+    "query": "新しく作成したスキルが低スコアで困ってます。自動改善ツールないですか？",
+    "should_trigger": true
+  },
+  {
+    "query": "SKILL.md を何度も修正してるんですが、品質スコアが伸びず…。自動化できませんか？",
+    "should_trigger": true
+  },
+  {
+    "query": "スキルの品質を95点以上に確実に持っていく方法が知りたい",
+    "should_trigger": true
+  },
+  {
+    "query": "既存スキルの SKILL.md を最適化し続けるスキルがあれば欲しい",
+    "should_trigger": true
+  },
+  {
+    "query": "サブエージェント型スキルを段階的に改善するワークフロー教えてください",
+    "should_trigger": true
+  },
+  {
+    "query": "スキルの採点と自動改善を同時にやってくれるツールはありますか？",
+    "should_trigger": true
+  },
+  {
+    "query": "skill-evaluator で 80 点だったスキル、更に改善する方法は？",
+    "should_trigger": true
+  },
+  {
+    "query": "テストスイートを分析して最適化したいです",
+    "should_trigger": false
+  },
+  {
+    "query": "このコード、バグあると思うんですが見てもらえますか？",
+    "should_trigger": false
+  },
+  {
+    "query": "PR のコードレビューをしてほしい",
+    "should_trigger": false
+  },
+  {
+    "query": "データベーススキーマを設計してもらえますか？",
+    "should_trigger": false
+  },
+  {
+    "query": "フロントエンドコンポーネントを作成したい",
+    "should_trigger": false
+  },
+  {
+    "query": "このスキル自体を改善してほしい（手動で修正指示）",
+    "should_trigger": true
+  },
+  {
+    "query": "SKILL.md が複雑になってきた。自動ツールで簡潔にできますか？",
+    "should_trigger": true
+  },
+  {
+    "query": "skill-evaluator が 70 点と言ってるけど、本当に 70 点ですか？",
+    "should_trigger": false
+  },
+  {
+    "query": "私が書いたスキル、自動で95点まで持ってってください",
+    "should_trigger": true
+  },
+  {
+    "query": "CI/CD パイプラインをセットアップしたい",
+    "should_trigger": false
+  },
+  {
+    "query": "既存スキルのイテレーティブな改善ワークフロー知りませんか？",
+    "should_trigger": true
+  },
+  {
+    "query": "スキル開発の品質ループを自動化したい",
+    "should_trigger": true
+  }
+]

@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 import queue
-import select
 import shutil
 import subprocess
 import sys

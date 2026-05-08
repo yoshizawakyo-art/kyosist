@@ -1,0 +1,27 @@
+{
+  "eval_id": 0,
+  "eval_name": "low-score-skill",
+  "prompt": "次の低品質スキルを /skill-optimizer で自動改善してください。改善ログと最終スコア（目標95点以上）を報告してください。\n\nテスト対象スキル: C:\\Develop\\Projects\\Kyosist\\.claude\\skills\\agent-evaluator\\test-skills\\low-score-skill",
+  "assertions": [
+    {
+      "text": "複数のイテレーション（最小3回）が実行された",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "text": "最終スコアが95点以上に達成された",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "text": "各イテレーションで SKILL.md が改善された",
+      "passed": null,
+      "evidence": null
+    },
+    {
+      "text": "改善前後のスコア差が20点以上",
+      "passed": null,
+      "evidence": null
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "skill_name": "skill-evaluator",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "new-skill-draft-improvement",
+      "prompt": "以下の低品質スキルSKILL.mdを評価し、95点超えるまで自動改善してください。\n\nスキルファイルパス: skill-draft-test.md\n\n改善後のSKILL.mdを出力してください。改善前後のスコア変化を記録してください。",
+      "expected_output": "95点以上に改善されたSKILL.md。説明が明確になり、ステップが具体化され、実装例が充実している状態。改善前後のスコアを記録したドキュメント付き。",
+      "files": ["skill-draft-test.md"]
+    }
+  ]
+}
