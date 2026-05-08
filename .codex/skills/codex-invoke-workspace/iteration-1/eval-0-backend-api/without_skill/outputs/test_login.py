@@ -11,6 +11,7 @@ Tests cover:
 import os
 import pytest
 from unittest.mock import Mock, patch
+from fastapi import HTTPException
 
 from auth_service import (
     hash_password,
@@ -168,6 +169,7 @@ class TestGenerateJWTToken:
     def test_token_expiration(self):
         """Token should have correct expiration time."""
         import jwt
+        from datetime import timedelta
 
         with patch.dict(os.environ, {"JWT_SECRET_KEY": "test_secret_key_123"}):
             expires_in_hours = 24

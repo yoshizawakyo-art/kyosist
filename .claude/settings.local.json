@@ -47,22 +47,11 @@
       "WebFetch(domain:medium.com)",
       "Bash(mkdir -p /mnt/c/Develop/Projects/MIRAI/material/dev/.claude/issue/closed)",
       "Bash(mv /mnt/c/Develop/Projects/MIRAI/material/dev/.claude/issue/2026-05-07_co-uctpchssls-id-co /mnt/c/Develop/Projects/MIRAI/material/dev/.claude/issue/closed/)",
-      "Bash(git *)",
-      "Bash(rtk ls *)",
-      "Bash(awk '{print $2}')",
-      "Bash(xargs kill *)",
-      "Bash(taskkill /F /IM python.exe)",
-      "Bash(rtk grep *)",
-      "Bash(/usr/local/bin/supabase migration *)"
-    ],
-    "allow": [
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)",
-      "Bash(gh pr create:*)",
-      "Bash(gh pr merge:*)"
+      "Bash(git *)"
     ],
     "deny": [
+      "Bash(git commit*)",
+      "Bash(git push*)",
       "Bash(git reset --hard*)",
       "Bash(git checkout --*)",
       "Bash(git clean -f*)",
