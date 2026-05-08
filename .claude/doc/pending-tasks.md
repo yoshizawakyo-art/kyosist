@@ -347,13 +347,29 @@ M run.py
    - Commits: b6497f9, 601c9ae, a16b81b
    - Branch: ahead 3 commits
 
+**Security Incident Response - Completed**:
+- [x] Identified credential exposure in git history (commit 3fa3608)
+- [x] Applied `git filter-repo` to physically remove `supabase/.temp/` from all commits
+- [x] Force-pushed cleaned history to GitHub (main branch)
+- [x] Verified git history cleanup
+
+**Critical Action Required - User**:
+⚠️ **Rotate Supabase credentials immediately:**
+1. Log in to Supabase dashboard: https://app.supabase.com/
+2. Navigate to Project Settings → Database → Change database password
+3. Generate new connection pooler credentials
+4. Update any `.env` files or CI/CD configs with new credentials
+5. Verify local development works with new credentials
+
 **Verification Pending**:
+- [ ] Supabase credentials rotated on console
+- [ ] Local development confirmed working with new credentials
 - [ ] Supabase cloud database confirmed to have `conversations.user_id` column
-- [ ] Local development server tested for PGRST204 error resolution
 - [ ] Chat creation functionality works without "user_id not found" errors
 - [ ] Production Vercel deployment checked for error resolution
 
 **Next Steps**:
-1. Run local server verification test
-2. Create PR if additional review is needed, or declare complete once verification passes
-3. Update this ledger with verification results
+1. Complete credential rotation (user action)
+2. Run local server verification test with new credentials
+3. Create PR if additional review is needed, or declare complete once verification passes
+4. Update this ledger with verification results
