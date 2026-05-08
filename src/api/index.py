@@ -78,12 +78,15 @@ CHAT_SYSTEM_PROMPT = """\
 
 
 def _get_jwt_secret_key() -> str:
+    logger.info("retrieving JWT secret key from environment")
     secret_key = os.environ.get("JWT_SECRET_KEY")
     if not secret_key:
+        logger.error("JWT_SECRET_KEY environment variable is NOT SET")
         raise HTTPException(
             status_code=500,
             detail="JWT secret key is not configured",
         )
+    logger.info("JWT_SECRET_KEY found successfully")
     return secret_key
 
 
@@ -471,10 +474,13 @@ def get_supabase_client() -> Client:
     例外:
       KeyError: 環境変数が設定されていない場合に発生。
     """
+    logger.info("initializing Supabase client")
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_ANON_KEY")
+    logger.info("Supabase URL env var: %s", "SET" if url else "NOT SET")
+    logger.info("Supabase ANON_KEY env var: %s", "SET" if key else "NOT SET")
     if not url or not key:
-        logger.error("Supabase configuration is missing")
+        logger.error("Supabase configuration is missing: url=%s, key=%s", bool(url), bool(key))
         raise HTTPException(
             status_code=503,
             detail="データベース接続設定が不足しています。管理者に連絡してください。",
@@ -482,7 +488,10 @@ def get_supabase_client() -> Client:
 
     # 取得した認証情報でクライアントを生成・返却
     try:
-        return create_client(url, key)
+        logger.info("creating Supabase client instance")
+        client = create_client(url, key)
+        logger.info("Supabase client initialized successfully")
+        return client
     except Exception as exc:
         logger.error("Supabase client creation failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -492,16 +501,23 @@ def get_supabase_client() -> Client:
 
 
 def _fetch_user_by_email(client: Client, email: str) -> Optional[dict]:
-    result = (
-        client.table("users")
-        .select("id,email,password_hash,created_at,updated_at")
-        .eq("email", email)
-        .limit(1)
-        .execute()
-    )
-    if not result.data:
-        return None
-    return result.data[0]
+    logger.info("checking if email already exists: %s", email)
+    try:
+        result = (
+            client.table("users")
+            .select("id,email,password_hash,created_at,updated_at")
+            .eq("email", email)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            logger.info("email not found in database")
+            return None
+        logger.info("email found in database")
+        return result.data[0]
+    except Exception as exc:
+        logger.error("failed to fetch user by email: %s", exc, exc_info=True)
+        raise
 
 
 def _fetch_user_by_id(client: Client, user_id: str) -> Optional[dict]:
@@ -531,24 +547,40 @@ def _verify_password(password: str, password_hash: str) -> bool:
 
 
 def _hash_password(password: str) -> str:
+    logger.info("hashing password with bcrypt")
     if bcrypt is None:
+        logger.error("bcrypt module is not installed")
         raise HTTPException(
             status_code=500,
             detail="bcrypt dependency is not installed",
         )
 
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    try:
+        hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        logger.info("password hashed successfully")
+        return hashed
+    except Exception as exc:
+        logger.error("password hashing failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="password hashing failed") from exc
 
 
 def _insert_user(client: Client, email: str, password_hash: str) -> dict:
-    result = (
-        client.table("users")
-        .insert({"email": email, "password_hash": password_hash})
-        .execute()
-    )
-    if not result.data:
-        raise ValueError("Failed to create user")
-    return result.data[0]
+    logger.info("attempting to insert user: %s", email)
+    try:
+        result = (
+            client.table("users")
+            .insert({"email": email, "password_hash": password_hash})
+            .execute()
+        )
+        if not result.data:
+            logger.error("insert returned no data")
+            raise ValueError("Failed to create user")
+        user_id = result.data[0].get("id")
+        logger.info("user inserted successfully: user_id=%s", user_id)
+        return result.data[0]
+    except Exception as exc:
+        logger.error("failed to insert user: %s", exc, exc_info=True)
+        raise
 
 
 def _is_unique_constraint_violation(exc: Exception) -> bool:
@@ -1079,48 +1111,67 @@ async def login(req: LoginRequest, request: Request) -> LoginResponse:
 
 @app.post("/api/auth/signup", response_model=LoginResponse, status_code=201)
 async def signup(req: LoginRequest, request: Request) -> LoginResponse:
-    client = get_supabase_client()
-    existing_user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
-    if existing_user is not None:
-        raise HTTPException(status_code=409, detail="Email is already registered")
-
-    password_hash = await asyncio.to_thread(_hash_password, req.password)
+    logger.info("signup request started: email=%s", req.email)
     try:
-        user = await asyncio.to_thread(_insert_user, client, req.email, password_hash)
+        logger.info("getting Supabase client")
+        client = get_supabase_client()
+        logger.info("checking if email already exists")
+        existing_user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+        if existing_user is not None:
+            logger.info("email already registered: %s", req.email)
+            raise HTTPException(status_code=409, detail="Email is already registered")
+
+        logger.info("hashing password")
+        password_hash = await asyncio.to_thread(_hash_password, req.password)
+        try:
+            logger.info("inserting user into database")
+            user = await asyncio.to_thread(_insert_user, client, req.email, password_hash)
+        except HTTPException:
+            logger.error("HTTP exception during user insert")
+            raise
+        except APIError as exc:
+            if _is_unique_constraint_violation(exc):
+                logger.info("unique constraint violation detected: %s", req.email)
+                raise HTTPException(
+                    status_code=409, detail="Email is already registered"
+                ) from None
+            logger.error("APIError during signup: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to create user") from exc
+        except ValueError as exc:
+            logger.error("ValueError during signup: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to create user") from exc
+        except Exception as exc:
+            logger.error("Unexpected exception during signup: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to create user") from exc
+
+        logger.info("generating access token")
+        token, expires_at = _create_access_token(user["id"])
+        logger.info("access token generated successfully")
+        logger.info("inserting session")
+        await asyncio.to_thread(
+            _insert_session,
+            client,
+            user["id"],
+            token,
+            expires_at,
+            request.headers.get("user-agent"),
+            _request_ip_address(request),
+        )
+        logger.info("session inserted successfully")
+
+        logger.info("signup completed successfully: email=%s", req.email)
+        public_user = {k: v for k, v in user.items() if k != "password_hash"}
+        return LoginResponse(
+            token=token,
+            access_token=token,
+            expires_at=expires_at.isoformat(),
+            user=AuthUserResponse(**public_user),
+        )
     except HTTPException:
         raise
-    except APIError as exc:
-        if _is_unique_constraint_violation(exc):
-            raise HTTPException(
-                status_code=409, detail="Email is already registered"
-            ) from None
-        logger.error("signup failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create user") from exc
-    except ValueError as exc:
-        logger.error("signup failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create user") from exc
     except Exception as exc:
-        logger.error("signup failed: %s", exc, exc_info=True)
+        logger.error("unexpected error in signup: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to create user") from exc
-
-    token, expires_at = _create_access_token(user["id"])
-    await asyncio.to_thread(
-        _insert_session,
-        client,
-        user["id"],
-        token,
-        expires_at,
-        request.headers.get("user-agent"),
-        _request_ip_address(request),
-    )
-
-    public_user = {k: v for k, v in user.items() if k != "password_hash"}
-    return LoginResponse(
-        token=token,
-        access_token=token,
-        expires_at=expires_at.isoformat(),
-        user=AuthUserResponse(**public_user),
-    )
 
 
 @app.get("/api/auth/me", response_model=AuthUserResponse)
