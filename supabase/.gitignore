@@ -1,0 +1,4 @@
+# Supabase CLI temporary files
+.temp/
+.branches/
+.env*.local
