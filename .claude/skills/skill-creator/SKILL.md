@@ -1,6 +1,7 @@
 ---
 name: skill-creator
-description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+description: Comprehensive skill creation and iteration workflow. Use whenever you're creating a new skill, refining an existing one, or evaluating skill performance against baselines. Use this skill to move from intent → design → testing → improvement → deployment. Use instead of skill-evaluator when you need the full cycle; use skill-evaluator for quality scoring only.
+compatibility: Subagents (Explore, pdca-check-reviewer), Python scripts (eval-viewer, aggregate_benchmark), filesystem access
 ---
 
 # Skill Creator
@@ -138,25 +139,129 @@ Output: feat(auth): implement JWT-based authentication
 
 Try to explain to the model why things are important in lieu of heavy-handed musty MUSTs. Use theory of mind and try to make the skill general and not super-narrow to specific examples. Start by writing a draft and then look at it with fresh eyes and improve it.
 
+### Skill Self-Evaluation Checklist
+
+Before creating test cases, validate the skill itself using this checklist. This prevents testing a fundamentally broken skill:
+
+**SKILL.md Structure:**
+- [ ] `name` field is present and matches directory name (no spaces, lowercase)
+- [ ] `description` is 1-2 sentences, includes when/why to use it, includes trigger keywords
+- [ ] compatibility field lists required tools/dependencies (if any)
+- [ ] Frontmatter is valid YAML with no syntax errors
+
+**Content Quality:**
+- [ ] Main sections use imperative form ("Do X", "Run Y")
+- [ ] Terminology is explained before use (for non-technical users)
+- [ ] Examples exist and show realistic use cases (not toy examples)
+- [ ] Important warnings or gotchas are clearly marked
+- [ ] Skill handles both happy path (success) and error cases
+- [ ] Links to referenced resources (docs, templates, scripts) are correct and exist
+
+**Execution Clarity:**
+- [ ] A reader could follow the skill's instructions without asking clarifying questions
+- [ ] If branching logic exists (if/else, different paths), all branches are documented
+- [ ] Input requirements are clear (what format, size limits, dependencies)
+- [ ] Success criteria are observable (not vague like "looks good")
+
+**Resource Bundling:**
+- [ ] Any scripts referenced in the skill body exist in `scripts/` directory
+- [ ] Any templates referenced exist in `assets/` directory
+- [ ] File paths in SKILL.md are correct relative to the skill root
+
+**Anti-Patterns to Check:**
+- [ ] No hardcoded secrets (API keys, tokens, credentials)
+- [ ] No Kyosist-specific logic if the skill is meant to be generic
+- [ ] No undefined terms or unexplained jargon
+
+If any checkbox is unchecked, fix the skill before writing test cases.
+
 ### Test Cases
 
-After writing the skill draft, come up with 2-3 realistic test prompts — the kind of thing a real user would actually say. Share them with the user: [you don't have to use this exact language] "Here are a few test cases I'd like to try. Do these look right, or do you want to add more?" Then run them.
+After the skill passes self-evaluation, come up with 2-3 realistic test prompts — the kind of thing a real user would actually say. Share them with the user: [you don't have to use this exact language] "Here are a few test cases I'd like to try. Do these look right, or do you want to add more?" Then run them.
 
 Save test cases to `evals/evals.json`. Don't write assertions yet — just the prompts. You'll draft assertions in the next step while the runs are in progress.
+
+### evals.json Creation Guide
+
+The `evals/evals.json` file defines test cases for your skill. Here's how to create it:
+
+**Step 1: Choose 2-4 realistic prompts**
+
+Think about how a real user would ask for this skill's help. Not abstract or toy prompts, but concrete requests with:
+- Specific file names or data samples
+- Real-world context (job title, company, problem type)
+- Edge cases or unusual requirements
+
+**Examples:**
+- ✅ "I have a CSV export from Jira with 500 issues. Can you create a burndown chart showing velocity per sprint?"
+- ✅ "Our pricing page says 'from $99/mo' but we want to show monthly AND annual. How do I set up the toggle?"
+- ❌ "Create a chart" (too vague, no context)
+- ❌ "Make this faster" (no specifics about what "this" is)
+
+**Step 2: For each prompt, identify inputs and expected output**
+
+`expected_output` is not "what the skill should return" — it's "what success looks like in human terms."
+
+**Examples:**
+- `"expected_output": "A PNG chart showing sprint velocity with dates on X-axis and story points on Y-axis, clearly labeled"`
+- `"expected_output": "A working toggle component that switches price display between monthly and annual rates"`
+
+**Step 3: List any input files (or leave empty)**
+
+If the test case requires files (CSV, PDF, design file), list them relative to the skill directory.
+
+```json
+"files": ["sample_data/jira_export.csv"]
+```
+
+If no files needed, use an empty array:
+
+```json
+"files": []
+```
+
+**Step 4: Leave `expectations` empty for now**
+
+You'll fill in `expectations` later (in the assertions step). For now, just set it to `[]`.
+
+**Complete example:**
 
 ```json
 {
   "skill_name": "example-skill",
   "evals": [
     {
+      "id": 0,
+      "prompt": "I have a CSV file (data.csv) with 200 rows of customer data. Can you create a summary report showing the top 5 customers by revenue and export it as a PDF?",
+      "expected_output": "A PDF report with a title, the 5 customers ranked by revenue with amounts, and a timestamp showing when the report was generated",
+      "files": ["sample_data/data.csv"],
+      "expectations": []
+    },
+    {
       "id": 1,
-      "prompt": "User's task prompt",
-      "expected_output": "Description of expected result",
-      "files": []
+      "prompt": "My boss sent me a 50-page financial document as a PDF. I need to extract just the revenue numbers from the executive summary section and put them in a spreadsheet. There are about 15 numbers scattered through the first 3 pages.",
+      "expected_output": "A spreadsheet (XLSX) with the extracted numbers in a single column, labeled with the type of revenue each one represents (e.g., 'Q4 Product Revenue', 'Q4 Service Revenue')",
+      "files": ["sample_data/financial_report.pdf"],
+      "expectations": []
+    },
+    {
+      "id": 2,
+      "prompt": "I'm testing edge cases for my skill. What happens if I pass an empty CSV file with just headers but no data rows?",
+      "expected_output": "The skill handles the edge case gracefully, either returning an empty report with proper formatting or a clear message explaining why there's no data to report",
+      "files": ["sample_data/empty.csv"],
+      "expectations": []
     }
   ]
 }
 ```
+
+**Fields:**
+- `skill_name`: Must match the skill's YAML frontmatter `name`
+- `evals[].id`: Unique integer, 0-indexed
+- `evals[].prompt`: The actual user task (realistic with specific file names, quantities, formats)
+- `evals[].expected_output`: Human-readable success description (observable outcome, not vague)
+- `evals[].files`: Input file paths relative to skill root (optional, empty array if no files)
+- `evals[].expectations`: Empty for now; filled in Step 2 with assertion definitions
 
 See `references/schemas.md` for the full schema (including the `assertions` field, which you'll add later).
 
@@ -165,6 +270,34 @@ See `references/schemas.md` for the full schema (including the `assertions` fiel
 This section is one continuous sequence — don't stop partway through. Do NOT use `/skill-test` or any other testing skill.
 
 Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Within the workspace, organize results by iteration (`iteration-1/`, `iteration-2/`, etc.) and within that, each test case gets a directory (`eval-0/`, `eval-1/`, etc.). Don't create all of this upfront — just create directories as you go.
+
+### Workspace Structure (Reference)
+
+For clarity on where outputs land, here's the expected directory layout:
+
+```
+skill-name-workspace/
+├── iteration-1/
+│   ├── eval-0-simple-case/
+│   │   ├── with_skill/
+│   │   │   ├── outputs/          # Actual deliverables (files produced by the skill)
+│   │   │   ├── grading.json      # Assertion results
+│   │   │   └── timing.json       # Token count, duration
+│   │   ├── without_skill/        # Or old_skill/ for improvements
+│   │   │   ├── outputs/
+│   │   │   ├── grading.json
+│   │   │   └── timing.json
+│   │   └── eval_metadata.json    # Eval definition + assertions
+│   ├── eval-1-complex-case/
+│   │   └── [same structure]
+│   ├── benchmark.json            # Aggregated scores
+│   └── benchmark.md              # Human-readable summary
+├── iteration-2/
+│   └── [same structure, now comparing vs iteration-1]
+└── [iteration-3, iteration-4, ...]
+```
+
+The key pattern: every test case produces two parallel runs (with_skill vs baseline), and each run includes outputs, grading results, and timing data.
 
 ### Step 1: Spawn all runs (with-skill AND baseline) in the same turn
 
@@ -185,16 +318,55 @@ Execute this task:
 - **Creating a new skill**: no skill at all. Same prompt, no skill path, save to `without_skill/outputs/`.
 - **Improving an existing skill**: the old version. Before editing, snapshot the skill (`cp -r <skill-path> <workspace>/skill-snapshot/`), then point the baseline subagent at the snapshot. Save to `old_skill/outputs/`.
 
+### Choosing a Baseline: Decision Guide
+
+**Choose `without_skill` (no skill) when:**
+- Creating a new skill from scratch
+- Skill type is completely new (no prior version to compare against)
+- Goal is to measure the absolute value the skill adds over default behavior
+
+**Choose `old_skill` (previous version) when:**
+- Improving an existing skill based on feedback or test results
+- Goal is to isolate the delta from v1 → v2
+- You want to show "we made this better" rather than "this adds value"
+
+**Choose blind comparison (agents/comparator.md) when:**
+- You're unsure which version is actually better
+- Stakeholders need a rigorous, unbiased quality judgment
+- Marketing/decision-making value is worth the extra effort
+
+**Rule of thumb:** New skill → without_skill. Improvement iteration → old_skill. Unsure → ask the user first.
+
 Write an `eval_metadata.json` for each test case (assertions can be empty for now). Give each eval a descriptive name based on what it's testing — not just "eval-0". Use this name for the directory too. If this iteration uses new or modified eval prompts, create these files for each new eval directory — don't assume they carry over from previous iterations.
+
+**Template: eval_metadata.json** (one per test case):
 
 ```json
 {
   "eval_id": 0,
-  "eval_name": "descriptive-name-here",
-  "prompt": "The user's task prompt",
+  "eval_name": "simple-case",
+  "prompt": "The user's actual task prompt",
   "assertions": []
 }
 ```
+
+During Step 2, you'll populate `assertions` with objects like:
+```json
+"assertions": [
+  {
+    "text": "The output includes the main deliverable",
+    "passed": null,
+    "evidence": null
+  },
+  {
+    "text": "The skill used the correct script or method",
+    "passed": null,
+    "evidence": null
+  }
+]
+```
+
+After grading (Step 4), each assertion's `passed` and `evidence` fields will be filled by the grader agent. The final `grading.json` in each run directory will contain the complete assessment.
 
 ### Step 2: While runs are in progress, draft assertions
 
@@ -203,6 +375,79 @@ Don't just wait for the runs to finish — you can use this time productively. D
 Good assertions are objectively verifiable and have descriptive names — they should read clearly in the benchmark viewer so someone glancing at the results immediately understands what each one checks. Subjective skills (writing style, design quality) are better evaluated qualitatively — don't force assertions onto things that need human judgment.
 
 Update the `eval_metadata.json` files and `evals/evals.json` with the assertions once drafted. Also explain to the user what they'll see in the viewer — both the qualitative outputs and the quantitative benchmark.
+
+### Quick Reference: Assertion Format
+
+Assertions are defined in `evals/evals.json` as verifiable expectations. Each assertion becomes a pass/fail check in `grading.json`. Structure your assertions to be unambiguous and testable:
+
+**From `agents/grader.md`**: An assertion PASSES when:
+- Clear evidence exists in the transcript or outputs
+- The evidence reflects genuine task completion (not just surface compliance)
+- Specific details can be cited
+
+An assertion FAILS when:
+- No evidence is found
+- Evidence contradicts the expectation
+- The assertion is technically satisfied but the underlying outcome is wrong or incomplete
+- The result appears accidental rather than intentional
+
+**Assertion schema** (see `references/schemas.md`):
+```json
+{
+  "text": "Descriptive name of the expectation",
+  "passed": true,
+  "evidence": "Quote or description of what was found in the transcript/outputs"
+}
+```
+
+**Anti-patterns to avoid**:
+- Don't assert "file exists" without checking content
+- Don't make assertions that pass for both good and bad outputs (non-discriminating)
+- Don't assert subjective qualities that need human judgment (use user feedback instead)
+
+### Grading Strategy: Automated vs Manual
+
+While drafting assertions, decide how to grade each one:
+
+**Use automated grading (Python script) when:**
+- Assertion is objective (file count, regex match, line number, JSON structure validation)
+- Assessment is deterministic (same input → same result always)
+- Fast evaluation is critical (script: <1s vs subagent: 1-2 minutes per test case)
+
+Example:
+```python
+import json
+with open("outputs/result.json") as f:
+    result = json.load(f)
+    assertions = {
+        "output_file_exists": "result.json" in os.listdir("outputs/"),
+        "has_key_output": "summary" in result,
+        "summary_length_gt_10": len(result.get("summary", "")) > 10
+    }
+```
+
+**Use subagent grading (agents/grader.md) when:**
+- Assertion requires judgment (code quality, writing fluency, design aesthetic)
+- Output is complex (multi-file artifact, interactive scenario, art/design)
+- User feedback is more valuable than binary pass/fail
+
+Rule of thumb: Use scripts for 80% of assertions, subagent grading for the remaining 20% (quality-judgment cases).
+
+### Common Assertion Mistakes (and how to avoid them)
+
+1. **Assertion is too strict** — Fails on minor variations (whitespace, formatting)
+   - Fix: Use token-level comparison, regex with flexibility, or content hash instead of byte-level match
+   
+2. **Assertion is non-discriminating** — Passes for both good and bad outputs (false positive)
+   - Fix: Test your assertion against an intentionally bad output first (e.g., empty file, garbage data)
+   
+3. **Assertion is slow to evaluate** — Grading takes 5+ minutes per test case
+   - Fix: Write a script (instant) instead of spawning a subagent (slow)
+   
+4. **Assertion is ill-defined** — What counts as "passing" is ambiguous
+   - Fix: Be explicit: "output file must contain at least N lines" not "output looks good"
+
+After drafting, explain to the user: "I've defined X assertions. Here's how they'll be scored: [list]. The viewer will show quantitative pass rates (how many passed?) and qualitative feedback (where did it fail?)."
 
 ### Step 3: As runs complete, capture timing data
 
@@ -417,9 +662,21 @@ After packaging, direct the user to the resulting `.skill` file path so they can
 
 ---
 
-## Claude.ai-specific instructions
+---
 
-In Claude.ai, the core workflow is the same (draft → test → review → improve → repeat), but because Claude.ai doesn't have subagents, some mechanics change. Here's what to adapt:
+## Environment-Specific Guidance
+
+This skill's workflow differs slightly depending on your environment. Choose the section that matches where you are:
+
+### Claude Code (Codex)
+
+You have full access to subagents and filesystem, so follow the main workflow exactly as written (Capture Intent → Interview → Write → Test → Improve → Deploy). All steps (parallel runs, grading, benchmarking, description optimization) work out of the box.
+
+---
+
+### Claude.ai (Browser-based)
+
+The core workflow is the same (draft → test → review → improve → repeat), but because Claude.ai doesn't have subagents, some mechanics change. Here's what to adapt:
 
 **Running test cases**: No subagents means no parallel execution. For each test case, read the skill's SKILL.md, then follow its instructions to accomplish the test prompt yourself. Do them one at a time. This is less rigorous than independent subagents (you wrote the skill and you're also running it, so you have full context), but it's a useful sanity check — and the human review step compensates. Skip the baseline runs — just use the skill to complete the task as requested.
 
@@ -439,6 +696,236 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 - **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, output `research-helper.skill` (not `research-helper-v2`).
 - **Copy to a writeable location before editing.** The installed skill path may be read-only. Copy to `/tmp/skill-name/`, edit there, and package from the copy.
 - **If packaging manually, stage in `/tmp/` first**, then copy to the output directory -- direct writes may fail due to permissions.
+
+---
+
+---
+
+## Error Handling & Recovery
+
+If things go wrong during test execution, here's how to handle them:
+
+### Subagent Timeouts or Crashes
+
+**Symptom:** A with_skill or baseline run doesn't complete within the expected time.
+
+**Recovery:**
+1. Check if subagent task is still pending (Monitor for task completion)
+2. If pending for >30 minutes, kill the task and re-run with reduced scope:
+   - Reduce number of test cases from N to N/2
+   - Run cases in series instead of parallel: reduce `--parallel-runs` or spawn one at a time
+3. Document which test case caused the timeout and mark it for later investigation
+
+### Memory / Token Limits
+
+**Symptom:** Subagent fails with OOM or token limit exceeded.
+
+**Recovery:**
+1. **Token limits**: This is expected on very large test sets. Break into smaller iterations:
+   - Run 3-4 test cases per iteration instead of 10+
+   - Each iteration is independent (with_skill + baseline both run to completion)
+2. **Memory limits**: Happens less often, but if it does, skip heavy I/O test cases (e.g., large file generation) in early iterations and focus on correctness first
+
+### Assertion Grading Fails
+
+**Symptom:** `grading.json` file is empty, malformed, or missing expected assertions.
+
+**Recovery:**
+1. Check if assertions were properly defined in `eval_metadata.json`
+2. If assertions are correct but grader subagent failed:
+   - Review the grader agent (`agents/grader.md`) for correctness
+   - For simple, objective assertions (file existence, line count), write a Python script to grade instead:
+     ```bash
+     python -c "import json; ..." > <eval>/grading.json
+     ```
+3. If assertions themselves are flawed (not objective, too strict), revise in `eval_metadata.json` and re-run grading
+
+### Benchmark Aggregation Fails
+
+**Symptom:** `scripts.aggregate_benchmark` command fails or produces an empty `benchmark.json`.
+
+**Recovery:**
+1. Check that all `grading.json` files exist in each run directory
+2. Check that `timing.json` exists in each run directory
+3. If missing, manually create them (copy a template from a successful run)
+4. Re-run the aggregation command with `--verbose` to see what's failing
+5. If it's a schema mismatch, see `references/schemas.md` for the expected structure
+
+---
+
+## Troubleshooting Q&A
+
+### Q1: "My assertions are passing but the skill is clearly not working correctly. What's wrong?"
+
+This is a **non-discriminating assertion** — it's passing for both good and bad outputs.
+
+**Fix:**
+- Review each assertion against an intentionally bad output
+- Add content checks, not just filename/existence checks: "File exists AND contains X" not just "file named result.txt exists"
+- Make sure you're testing the actual outcome, not just a side effect
+
+**Example:**
+```json
+// BAD: passes for any file
+"text": "A spreadsheet was created",
+
+// GOOD: passes only if the spreadsheet has correct data
+"text": "The spreadsheet has 10 rows with revenue totals in column C"
+```
+
+---
+
+### Q2: "The subagent produced a great output, but my assertion is failing. Why?"
+
+Likely your assertion is **too strict** — it expects exact formatting or specific wording that doesn't match the actual output.
+
+**Fix:**
+- Use content-based matching instead of exact string match
+- Check for presence of key information, not specific phrasing
+- Use regex or token-based comparison instead of byte-level match
+
+**Example:**
+```json
+// BAD: too strict, fails on any whitespace difference
+"text": "The output contains the exact string 'Revenue: $1,234,567'",
+
+// GOOD: flexible, checks for the numbers
+"text": "The output includes revenue value around $1.2M (±10%)"
+```
+
+---
+
+### Q3: "I'm getting different results on subsequent runs of the same test. My evals are flaky."
+
+Your evaluation is likely **non-deterministic** — either the skill is non-deterministic, or the assertion is checking something that varies.
+
+**Fix:**
+- Identify what varies: LLM output, file timestamps, sorting order, token counts
+- If it's the LLM output: assertions should check for semantic equivalence, not exact match
+- If it's timestamps or IDs: ignore those fields or normalize them
+- If it's sorting: sort before comparing
+
+**Example:**
+```json
+// BAD: fails when order changes
+"text": "The output rows are in order A, B, C",
+
+// GOOD: checks the set of rows regardless of order
+"text": "The output contains all three rows: A, B, C"
+```
+
+---
+
+### Q4: "I added a great assertion but it's not in the grading.json output. What happened?"
+
+The assertion definition might be in `evals.json` but **not** in the specific `eval_metadata.json` file that was used for that run.
+
+**Fix:**
+1. Check that you updated the `eval_metadata.json` file in the specific eval directory (e.g., `iteration-2/eval-0-simple/eval_metadata.json`)
+2. Check that the grader agent read the correct file path
+3. If you added assertions after the grader ran, re-run the grader (don't re-run the entire test)
+
+---
+
+### Q5: "The feedback.json file is empty or has the wrong structure. Can I still proceed?"
+
+Yes, but conditionally.
+
+**Recovery:**
+1. Check the viewer HTML file for user feedback (it might have auto-saved locally but not downloaded)
+2. If no user feedback exists, ask the user for verbal feedback and document it as comments in the skill
+3. If there's only feedback on some test cases, proceed with those and skip the ones with no feedback
+4. You can manually edit `feedback.json` to add feedback that the user provides verbally:
+   ```json
+   {
+     "reviews": [
+       {"run_id": "eval-0-with_skill", "feedback": "User's comment here", "timestamp": "2026-05-07T..."}
+     ]
+   }
+   ```
+
+---
+
+### Q6: "The viewer is open but the user can't submit feedback. What do I do?"
+
+**For Claude Code (with server running):**
+- Refresh the browser (Ctrl+R or Cmd+R)
+- Check that the Python server is still running: `ps aux | grep generate_review.py`
+- If the server died, restart it and re-open the viewer
+
+**For Cowork (static HTML):**
+- The "Submit All Reviews" button downloads `feedback.json` to the user's Downloads folder
+- Tell the user where to find it and how to share it with you
+- Copy the file to the workspace: `cp ~/Downloads/feedback.json <workspace>/`
+
+---
+
+### Q7: "A test case produced unexpected output. Should I rerun it or iterate?"
+
+Depends on why the output was unexpected.
+
+**Rerun if:**
+- The skill failed to run (error, timeout, invalid input handling)
+- The baseline performed differently than expected
+- You have a hypothesis for improvement that's worth testing
+
+**Iterate instead if:**
+- The output is reasonable but not quite what you wanted
+- User feedback suggests a direction for improvement
+- Multiple test cases show the same pattern of suboptimal output
+
+---
+
+### Q8: "Can I run a subset of test cases in a new iteration without rerunning everything?"
+
+Yes, and it's often smart to do so.
+
+**How:**
+1. Create a new iteration directory (e.g., `iteration-2/`)
+2. Create subdirectories only for the test cases you want to retest
+3. Run parallel tests for those cases only (with_skill and baseline)
+4. When you run aggregation, it will include all iterations — this is fine, you're measuring progress
+
+**When to do this:**
+- You made a small targeted improvement and want to verify it quickly
+- You want to debug a single failing test case without rerunning 10
+- You're verifying a fix after user feedback (no need to retest all cases)
+
+---
+
+### Q9: "The grader agent says 'Assertion X is non-discriminating. A hallucinated output would also pass.' What should I do?"
+
+The grader is right — this assertion isn't testing the right thing.
+
+**Fix:**
+1. Strengthen the assertion to check for factual content, not just structure
+2. Add specificity: "The output includes [actual data]" not "The output is formatted correctly"
+3. Consider combining two weaker assertions into one stronger one
+
+**Example:**
+```json
+// BEFORE: non-discriminating
+"text": "The output file exists and has content",
+
+// AFTER: discriminating
+"text": "The output file contains at least 5 data rows with valid dates in YYYY-MM-DD format"
+```
+
+---
+
+### Q10: "I'm in iteration 3 and the benchmark viewer shows iteration 1 vs iteration 2. How do I see iteration 2 vs iteration 3?"
+
+When you launch the viewer, pass the `--previous-workspace` flag pointing to the previous iteration:
+
+```bash
+python <skill-creator-path>/eval-viewer/generate_review.py \
+  <workspace>/iteration-3 \
+  --skill-name "my-skill" \
+  --benchmark <workspace>/iteration-3/benchmark.json \
+  --previous-workspace <workspace>/iteration-2
+```
+
+This will show iteration-2 outputs in the "Previous Output" section and comparison in the Benchmark tab.
 
 ---
 
@@ -481,5 +968,44 @@ Repeating one more time the core loop here for emphasis:
 - Package the final skill and return it to the user.
 
 Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in Cowork, please specifically put "Create evals JSON and run `eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
+
+---
+
+## Critical Rules
+
+**1. Generate the eval viewer BEFORE evaluating outputs yourself.**
+
+After running tests, your first action is always:
+```bash
+python <skill-creator-path>/eval-viewer/generate_review.py \
+  <workspace>/iteration-N \
+  --skill-name "<name>" \
+  --benchmark <workspace>/iteration-N/benchmark.json
+```
+
+This gets outputs in front of the user immediately. Only then should you read/analyze the results yourself. If you skip this step, you risk making improvements based on incomplete information.
+
+**2. Check Phase is mandatory.**
+
+Before running test cases, ensure the skill has passed Check (via pdca-check-reviewer.md guidelines). If Check is skipped, you may spend hours testing a broken skill.
+
+**3. Never skip baselines.**
+
+Always run both with_skill AND baseline (without_skill or old_skill) in parallel. A single test case without a baseline is meaningless — you can't measure the skill's value if you don't know what "no skill" looks like.
+
+**4. Organize results consistently.**
+
+Every test case must produce:
+- `eval_metadata.json` (eval definition + assertions)
+- `with_skill/outputs/` + `with_skill/grading.json` + `with_skill/timing.json`
+- `without_skill/outputs/` + `without_skill/grading.json` + `without_skill/timing.json` (or `old_skill/...`)
+
+Missing any of these makes aggregation and comparison impossible.
+
+**5. Read transcripts, not just outputs.**
+
+When analyzing why a skill failed a test, don't just look at the final output. Read the transcript of how the subagent got there. Often the issue is a misstep halfway through, not the final deliverable.
+
+---
 
 Good luck!

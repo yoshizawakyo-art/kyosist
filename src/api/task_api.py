@@ -154,7 +154,9 @@ def _is_uuid(value: str) -> bool:
     return True
 
 
-def _get_or_create_task_user(client, user_id: str, username: str = "user") -> Optional[str]:
+def _get_or_create_task_user(
+    client, user_id: str, username: str = "user"
+) -> Optional[str]:
     if not client or not _is_uuid(user_id):
         return None
 
@@ -309,9 +311,13 @@ async def _execute_task_engine(
     if task_type == "file":
         executor = FileExecutor()
         if action == "create":
-            return await executor.create(params.get("path", ""), params.get("content", ""))
+            return await executor.create(
+                params.get("path", ""), params.get("content", "")
+            )
         if action == "edit":
-            return await executor.edit(params.get("path", ""), params.get("content", ""))
+            return await executor.edit(
+                params.get("path", ""), params.get("content", "")
+            )
         if action == "delete":
             return await executor.delete(params.get("path", ""))
         if action == "read":
@@ -322,16 +328,22 @@ async def _execute_task_engine(
 
     if task_type == "db":
         client = _get_supabase_client()
-        return await DBExecutor(client).execute(params.get("query", ""), params.get("params"))
+        return await DBExecutor(client).execute(
+            params.get("query", ""), params.get("params")
+        )
 
     if task_type == "browser":
         executor = _BROWSER_EXECUTORS.setdefault(user_id, BrowserExecutor())
         if action == "click":
             return await executor.click(params.get("selector", ""))
         if action == "input_text":
-            return await executor.input_text(params.get("selector", ""), params.get("text"))
+            return await executor.input_text(
+                params.get("selector", ""), params.get("text")
+            )
         if action == "scroll":
-            return await executor.scroll(params.get("direction", "down"), params.get("amount", 100))
+            return await executor.scroll(
+                params.get("direction", "down"), params.get("amount", 100)
+            )
         if action == "navigate":
             return await executor.navigate(params.get("url", ""))
         if action == "screenshot":
@@ -339,7 +351,11 @@ async def _execute_task_engine(
         if action == "close_session":
             return await executor.close_session()
 
-    return {"status": "error", "action": action, "message": f"未サポートのタスクです: {task_type}/{action}"}
+    return {
+        "status": "error",
+        "action": action,
+        "message": f"未サポートのタスクです: {task_type}/{action}",
+    }
 
 
 def _validate_task(
@@ -414,7 +430,9 @@ async def _save_history(
         "error_message": error_message,
         "executed_at": created_at,
     }
-    await asyncio.to_thread(lambda: client.table("task_history").insert(payload).execute())
+    await asyncio.to_thread(
+        lambda: client.table("task_history").insert(payload).execute()
+    )
 
 
 # ============================================================================
@@ -433,12 +451,16 @@ async def get_task_history(
     task_user_id = await asyncio.to_thread(_get_or_create_task_user, client, user_id)
     if client and task_user_id:
         result = await asyncio.to_thread(
-            lambda: client.table("task_history")
-            .select("id,task_type,task_input,status,result,error_message,created_at")
-            .eq("user_id", task_user_id)
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
+            lambda: (
+                client.table("task_history")
+                .select(
+                    "id,task_type,task_input,status,result,error_message,created_at"
+                )
+                .eq("user_id", task_user_id)
+                .order("created_at", desc=True)
+                .range(offset, offset + limit - 1)
+                .execute()
+            )
         )
         return [TaskHistoryItem(**row) for row in result.data]
 
@@ -507,7 +529,9 @@ async def create_skill(
             "description": skill.description,
             "pattern": skill.pattern,
         }
-        await asyncio.to_thread(lambda: client.table("task_skills").insert(payload).execute())
+        await asyncio.to_thread(
+            lambda: client.table("task_skills").insert(payload).execute()
+        )
 
     return skill
 
@@ -521,11 +545,13 @@ async def list_skills(
     task_user_id = await asyncio.to_thread(_get_or_create_task_user, client, user_id)
     if client and task_user_id:
         result = await asyncio.to_thread(
-            lambda: client.table("task_skills")
-            .select("id,skill_name,description,pattern,created_at")
-            .eq("user_id", task_user_id)
-            .order("created_at", desc=True)
-            .execute()
+            lambda: (
+                client.table("task_skills")
+                .select("id,skill_name,description,pattern,created_at")
+                .eq("user_id", task_user_id)
+                .order("created_at", desc=True)
+                .execute()
+            )
         )
         return [SkillResponse(**row) for row in result.data]
     return [SkillResponse(**skill) for skill in _IN_MEMORY_SKILLS.get(user_id, [])]
@@ -544,10 +570,12 @@ async def delete_skill(
     task_user_id = await asyncio.to_thread(_get_or_create_task_user, client, user_id)
     if client and task_user_id:
         await asyncio.to_thread(
-            lambda: client.table("task_skills")
-            .delete()
-            .eq("id", skill_id)
-            .eq("user_id", task_user_id)
-            .execute()
+            lambda: (
+                client.table("task_skills")
+                .delete()
+                .eq("id", skill_id)
+                .eq("user_id", task_user_id)
+                .execute()
+            )
         )
     return {"message": "スキル削除完了"}

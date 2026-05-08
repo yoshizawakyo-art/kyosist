@@ -31,7 +31,7 @@ class TestPasswordHashing:
 
         assert hashed != password
         assert len(hashed) > 20
-        assert hashed.startswith('$2b$')
+        assert hashed.startswith("$2b$")
 
     def test_verify_password_with_correct_password(self):
         """Correct password should verify successfully."""
@@ -79,19 +79,19 @@ class TestFindUserByEmail:
         mock_result = Mock()
         mock_result.data = [
             {
-                'id': '123e4567-e89b-12d3-a456-426614174000',
-                'email': 'test@example.com',
-                'password_hash': '$2b$12$...',
-                'created_at': '2024-01-01T00:00:00Z',
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "email": "test@example.com",
+                "password_hash": "$2b$12$...",
+                "created_at": "2024-01-01T00:00:00Z",
             }
         ]
         mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_result
 
-        result = find_user_by_email(mock_client, 'test@example.com')
+        result = find_user_by_email(mock_client, "test@example.com")
 
         assert result is not None
-        assert result['email'] == 'test@example.com'
-        assert result['id'] == '123e4567-e89b-12d3-a456-426614174000'
+        assert result["email"] == "test@example.com"
+        assert result["id"] == "123e4567-e89b-12d3-a456-426614174000"
 
     def test_find_nonexistent_user(self):
         """Should return None when email does not exist."""
@@ -100,7 +100,7 @@ class TestFindUserByEmail:
         mock_result.data = []
         mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_result
 
-        result = find_user_by_email(mock_client, 'nonexistent@example.com')
+        result = find_user_by_email(mock_client, "nonexistent@example.com")
 
         assert result is None
 
@@ -117,11 +117,11 @@ class TestFindUserByEmail:
         mock_select.eq.return_value = mock_eq
         mock_eq.execute.return_value = Mock(data=[])
 
-        find_user_by_email(mock_client, 'test@example.com')
+        find_user_by_email(mock_client, "test@example.com")
 
-        mock_client.table.assert_called_once_with('users')
-        mock_table.select.assert_called_once_with('*')
-        mock_select.eq.assert_called_once_with('email', 'test@example.com')
+        mock_client.table.assert_called_once_with("users")
+        mock_table.select.assert_called_once_with("*")
+        mock_select.eq.assert_called_once_with("email", "test@example.com")
         mock_eq.execute.assert_called_once()
 
 
@@ -130,69 +130,60 @@ class TestGenerateJWTToken:
 
     def test_generate_token_with_secret_key(self):
         """Should generate valid JWT token when secret key is set."""
-        with patch.dict(os.environ, {'JWT_SECRET_KEY': 'test_secret_key_123'}):
+        with patch.dict(os.environ, {"JWT_SECRET_KEY": "test_secret_key_123"}):
             token = generate_jwt_token(
-                user_id='123e4567-e89b-12d3-a456-426614174000',
-                email='test@example.com'
+                user_id="123e4567-e89b-12d3-a456-426614174000", email="test@example.com"
             )
 
             assert isinstance(token, str)
             assert len(token) > 0
-            assert token.count('.') == 2  # JWT has 3 parts
+            assert token.count(".") == 2  # JWT has 3 parts
 
     def test_generate_token_without_secret_key(self):
         """Should raise ValueError when JWT_SECRET_KEY is not set."""
         with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('JWT_SECRET_KEY', None)
+            os.environ.pop("JWT_SECRET_KEY", None)
 
-            with pytest.raises(ValueError, match='JWT_SECRET_KEY'):
+            with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
                 generate_jwt_token(
-                    user_id='123e4567-e89b-12d3-a456-426614174000',
-                    email='test@example.com'
+                    user_id="123e4567-e89b-12d3-a456-426614174000",
+                    email="test@example.com",
                 )
 
     def test_token_contains_user_info(self):
         """Generated token should encode user_id and email."""
         import jwt
 
-        with patch.dict(os.environ, {'JWT_SECRET_KEY': 'test_secret_key_123'}):
-            user_id = '123e4567-e89b-12d3-a456-426614174000'
-            email = 'test@example.com'
+        with patch.dict(os.environ, {"JWT_SECRET_KEY": "test_secret_key_123"}):
+            user_id = "123e4567-e89b-12d3-a456-426614174000"
+            email = "test@example.com"
             token = generate_jwt_token(user_id=user_id, email=email)
 
-            decoded = jwt.decode(
-                token,
-                'test_secret_key_123',
-                algorithms=['HS256']
-            )
+            decoded = jwt.decode(token, "test_secret_key_123", algorithms=["HS256"])
 
-            assert decoded['sub'] == user_id
-            assert decoded['email'] == email
-            assert 'iat' in decoded
-            assert 'exp' in decoded
+            assert decoded["sub"] == user_id
+            assert decoded["email"] == email
+            assert "iat" in decoded
+            assert "exp" in decoded
 
     def test_token_expiration(self):
         """Token should have correct expiration time."""
         import jwt
         from datetime import timedelta
 
-        with patch.dict(os.environ, {'JWT_SECRET_KEY': 'test_secret_key_123'}):
+        with patch.dict(os.environ, {"JWT_SECRET_KEY": "test_secret_key_123"}):
             expires_in_hours = 24
             token = generate_jwt_token(
-                user_id='user123',
-                email='test@example.com',
-                expires_in_hours=expires_in_hours
+                user_id="user123",
+                email="test@example.com",
+                expires_in_hours=expires_in_hours,
             )
 
-            decoded = jwt.decode(
-                token,
-                'test_secret_key_123',
-                algorithms=['HS256']
-            )
+            decoded = jwt.decode(token, "test_secret_key_123", algorithms=["HS256"])
 
             # Token expiration should be approximately 24 hours from now
-            exp_time = decoded['exp']
-            iat_time = decoded['iat']
+            exp_time = decoded["exp"]
+            iat_time = decoded["iat"]
             diff_seconds = exp_time - iat_time
 
             # Allow 1 minute tolerance for test execution time
@@ -205,19 +196,19 @@ class TestEndpointIntegration:
 
     def test_login_success_flow(self):
         """Successful login should return token and user info."""
-        email = 'test@example.com'
-        password = 'password123'
-        user_id = '123e4567-e89b-12d3-a456-426614174000'
+        email = "test@example.com"
+        password = "password123"
+        user_id = "123e4567-e89b-12d3-a456-426614174000"
 
         # Mock database user
         mock_client = Mock()
         mock_result = Mock()
         mock_result.data = [
             {
-                'id': user_id,
-                'email': email,
-                'password_hash': hash_password(password),
-                'created_at': '2024-01-01T00:00:00Z',
+                "id": user_id,
+                "email": email,
+                "password_hash": hash_password(password),
+                "created_at": "2024-01-01T00:00:00Z",
             }
         ]
         mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_result
@@ -225,41 +216,41 @@ class TestEndpointIntegration:
         # Test password verification
         user = find_user_by_email(mock_client, email)
         assert user is not None
-        assert verify_password(password, user['password_hash']) is True
+        assert verify_password(password, user["password_hash"]) is True
 
         # Test token generation
-        with patch.dict(os.environ, {'JWT_SECRET_KEY': 'test_secret_key_123'}):
-            token = generate_jwt_token(user['id'], user['email'])
+        with patch.dict(os.environ, {"JWT_SECRET_KEY": "test_secret_key_123"}):
+            token = generate_jwt_token(user["id"], user["email"])
             assert token is not None
             assert len(token) > 0
 
     def test_login_failure_wrong_password(self):
         """Login should fail with wrong password."""
-        email = 'test@example.com'
-        correct_password = 'password123'
-        wrong_password = 'wrongpassword'
-        user_id = '123e4567-e89b-12d3-a456-426614174000'
+        email = "test@example.com"
+        correct_password = "password123"
+        wrong_password = "wrongpassword"
+        user_id = "123e4567-e89b-12d3-a456-426614174000"
 
         # Mock database user
         mock_client = Mock()
         mock_result = Mock()
         mock_result.data = [
             {
-                'id': user_id,
-                'email': email,
-                'password_hash': hash_password(correct_password),
-                'created_at': '2024-01-01T00:00:00Z',
+                "id": user_id,
+                "email": email,
+                "password_hash": hash_password(correct_password),
+                "created_at": "2024-01-01T00:00:00Z",
             }
         ]
         mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value = mock_result
 
         user = find_user_by_email(mock_client, email)
         assert user is not None
-        assert verify_password(wrong_password, user['password_hash']) is False
+        assert verify_password(wrong_password, user["password_hash"]) is False
 
     def test_login_failure_user_not_found(self):
         """Login should fail when user doesn't exist."""
-        email = 'nonexistent@example.com'
+        email = "nonexistent@example.com"
 
         # Mock database (no user)
         mock_client = Mock()

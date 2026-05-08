@@ -47,7 +47,11 @@ class BrowserExecutor:
     async def close_session(self) -> Dict[str, Any]:
         """ブラウザセッションを閉じる。"""
         await self.close()
-        return {"status": "success", "action": "close_session", "message": "セッションを閉じました"}
+        return {
+            "status": "success",
+            "action": "close_session",
+            "message": "セッションを閉じました",
+        }
 
     async def _ensure_browser(self) -> None:
         """ブラウザが起動していることを確認"""
@@ -72,7 +76,9 @@ class BrowserExecutor:
             if action == "click":
                 return await self.click(operation.get("selector", ""))
             elif action == "input_text":
-                return await self.input_text(operation.get("selector", ""), operation.get("text"))
+                return await self.input_text(
+                    operation.get("selector", ""), operation.get("text")
+                )
             elif action == "scroll":
                 return await self.scroll(
                     operation.get("direction", "down"), operation.get("amount", 100)
@@ -157,7 +163,9 @@ class BrowserExecutor:
                 "message": f"入力失敗: {str(exc)}",
             }
 
-    async def scroll(self, direction: str = "down", amount: int = 100) -> Dict[str, Any]:
+    async def scroll(
+        self, direction: str = "down", amount: int = 100
+    ) -> Dict[str, Any]:
         """スクロール"""
         try:
             await self._ensure_browser()

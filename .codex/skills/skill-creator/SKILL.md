@@ -405,6 +405,39 @@ Take `best_description` from the JSON output and update the skill's SKILL.md fro
 
 ---
 
+## Skill Evaluation
+
+Once the skill is complete, test results are reviewed, and description is optimized, run the skill-evaluator to ensure the SKILL.md meets quality standards.
+
+### Step 1: Invoke skill-evaluator
+
+Invoke the skill-evaluator skill on the completed SKILL.md:
+
+```
+Use the skill-evaluator skill to evaluate <path-to-skill>/SKILL.md
+```
+
+The evaluator will return a score (0-100) based on:
+- **Trigger description quality (20 points)**: Clear when to use, specific contexts, distinguishes from similar tools
+- **Procedure executability (30 points)**: Clear steps, no ambiguity, includes test cases and completion conditions
+- **Skill design quality (25 points)**: Balanced structure, reusable examples, integration with existing workflows
+- **Evaluation loop quality (25 points)**: Clear scoring criteria, improvement tracking, self-improvement capability
+
+### Step 2: Address feedback if needed
+
+If the evaluator returns `CHECK NG` or a score below 95, update the SKILL.md based on the feedback:
+- Use the improvement report to understand which sections need refinement
+- Follow the evaluator's specific suggestions
+- Rerun the evaluator to confirm improvements
+
+The evaluator will iterate up to 10 times if needed. Aim for 95+ points before declaring the skill ready.
+
+### Step 3: Completion
+
+Once the evaluator returns `CHECK OK` (95+ points), the skill meets quality standards and is ready for production use.
+
+---
+
 ### Package and Present (only if `present_files` tool is available)
 
 Check whether you have access to the `present_files` tool. If you don't, skip this step. If you do, package the skill and present the .skill file to the user:

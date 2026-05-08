@@ -37,6 +37,7 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 import jwt
+import google.generativeai as genai
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -56,6 +57,45 @@ logger = logging.getLogger(__name__)
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
+GEMINI_MODEL = "gemini-2.0-flash-lite"
+GEMINI_SYSTEM_PROMPT = "You are Kyosist, a concise and helpful AI assistant."
+_STREAM_DONE = object()
+
+
+def _get_google_api_key() -> str:
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY is not configured")
+    return api_key
+
+
+def _configure_gemini(api_key: str) -> None:
+    genai.configure(api_key=api_key)
+
+
+def _gemini_model(system_instruction: str | None = None):
+    return genai.GenerativeModel(
+        os.environ.get("GEMINI_MODEL", GEMINI_MODEL),
+        system_instruction=system_instruction,
+    )
+
+
+def _gemini_text(response) -> str:
+    try:
+        return response.text or ""
+    except Exception:
+        parts: list[str] = []
+        for candidate in getattr(response, "candidates", []) or []:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", []) or []:
+                text = getattr(part, "text", "")
+                if text:
+                    parts.append(text)
+        return "".join(parts)
+
+
+def _next_stream_chunk(iterator):
+    return next(iterator, _STREAM_DONE)
 
 
 def _get_jwt_secret_key() -> str:
@@ -499,6 +539,27 @@ def _verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+def _hash_password(password: str) -> str:
+    if bcrypt is None:
+        raise HTTPException(
+            status_code=500,
+            detail="bcrypt dependency is not installed",
+        )
+
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _insert_user(client: Client, email: str, password_hash: str) -> dict:
+    result = (
+        client.table("users")
+        .insert({"email": email, "password_hash": password_hash})
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+    return result.data[0]
+
+
 def _create_access_token(user_id: str) -> tuple[str, datetime]:
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
@@ -940,6 +1001,40 @@ async def login(req: LoginRequest, request: Request) -> LoginResponse:
     )
 
 
+@app.post("/api/auth/signup", response_model=LoginResponse, status_code=201)
+async def signup(req: LoginRequest, request: Request) -> LoginResponse:
+    client = get_supabase_client()
+    existing_user = await asyncio.to_thread(_fetch_user_by_email, client, req.email)
+    if existing_user is not None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+
+    password_hash = await asyncio.to_thread(_hash_password, req.password)
+    try:
+        user = await asyncio.to_thread(_insert_user, client, req.email, password_hash)
+    except Exception as exc:
+        logger.error("signup failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create user") from None
+
+    token, expires_at = _create_access_token(user["id"])
+    await asyncio.to_thread(
+        _insert_session,
+        client,
+        user["id"],
+        token,
+        expires_at,
+        request.headers.get("user-agent"),
+        _request_ip_address(request),
+    )
+
+    public_user = {k: v for k, v in user.items() if k != "password_hash"}
+    return LoginResponse(
+        token=token,
+        access_token=token,
+        expires_at=expires_at.isoformat(),
+        user=AuthUserResponse(**public_user),
+    )
+
+
 @app.get("/api/auth/me", response_model=AuthUserResponse)
 async def get_current_user(
     auth_context: dict = Depends(get_current_auth_context),
@@ -1035,20 +1130,11 @@ async def chat(
     req: ChatRequest,
     current_user: dict = Depends(get_current_auth_context),
 ) -> StreamingResponse:
-    try:
-        from groq import AsyncGroq
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503, detail="groq package is not installed"
-        ) from exc
-
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key:
-        raise HTTPException(status_code=503, detail="GROQ_API_KEY is not configured")
+    google_key = _get_google_api_key()
+    _configure_gemini(google_key)
 
     client = current_user["client"]
     user_id = current_user["user"]["id"]
-    groq_client = AsyncGroq(api_key=groq_key)
 
     if req.conversation_id is None:
         conv_row = await asyncio.to_thread(_insert_conversation, client, user_id)
@@ -1065,31 +1151,29 @@ async def chat(
             raise HTTPException(status_code=404, detail="Conversation not found")
 
     history_rows = await asyncio.to_thread(_fetch_messages, client, conv_id)
-    groq_messages = [
-        {
-            "role": "system",
-            "content": "You are Kyosist, a concise and helpful AI assistant.",
-        }
-    ]
+    gemini_contents = []
     for row in history_rows:
-        role = "assistant" if row.get("role") == "bot" else "user"
+        role = "model" if row.get("role") == "bot" else "user"
         content = row.get("content")
         if content:
-            groq_messages.append({"role": role, "content": content})
-    groq_messages.append({"role": "user", "content": req.message})
-
-    stream = await groq_client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=groq_messages,
-        temperature=0.7,
-        stream=True,
-    )
+            gemini_contents.append({"role": role, "parts": [content]})
+    gemini_contents.append({"role": "user", "parts": [req.message]})
 
     async def event_stream():
         final_reply = ""
         try:
-            async for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
+            model = _gemini_model(system_instruction=GEMINI_SYSTEM_PROMPT)
+            stream = await asyncio.to_thread(
+                model.generate_content,
+                gemini_contents,
+                generation_config={"temperature": 0.7},
+                stream=True,
+            )
+            while True:
+                chunk = await asyncio.to_thread(_next_stream_chunk, stream)
+                if chunk is _STREAM_DONE:
+                    break
+                delta = _gemini_text(chunk)
                 if not delta:
                     continue
                 final_reply += delta
@@ -1503,24 +1587,25 @@ async def skill_assistant(req: SkillAssistantRequest) -> SkillAssistantResponse:
 {req.message}
 """.strip()
 
-    groq_key = os.environ.get("GROQ_API_KEY", "")
+    google_key = os.environ.get("GOOGLE_API_KEY", "")
     assistant_reply = (
         "暫定のスキル案を作成しました。内容を確認して必要なら修正してください。"
     )
     draft_data = _build_skill_draft_from_text(req.message)
 
-    if groq_key:
+    if google_key:
         try:
-            from groq import AsyncGroq
-
-            groq_client = AsyncGroq(api_key=groq_key)
-            result = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
-                temperature=0.2,
+            _configure_gemini(google_key)
+            model = _gemini_model()
+            result = await asyncio.to_thread(
+                model.generate_content,
+                prompt,
+                generation_config={
+                    "max_output_tokens": 1024,
+                    "temperature": 0.2,
+                },
             )
-            content = result.choices[0].message.content or ""
+            content = _gemini_text(result)
             parsed = _extract_json_object(content)
             if parsed:
                 assistant_reply = parsed.get("reply") or assistant_reply
@@ -1554,18 +1639,9 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
     ユーザーメッセージと最終回答は messages テーブルに保存される。
     各思考ステップは agent_steps テーブルに記録される。
     """
-    try:
-        from groq import AsyncGroq
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503, detail="groq パッケージが未インストールです"
-        ) from exc
-
-    groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key:
-        raise HTTPException(status_code=503, detail="GROQ_API_KEY が設定されていません")
-
-    groq_client = AsyncGroq(api_key=groq_key)
+    google_key = _get_google_api_key()
+    _configure_gemini(google_key)
+    gemini_model = _gemini_model()
     supabase = get_supabase_client()
 
     if req.conversation_id is None:
@@ -1584,7 +1660,7 @@ async def agent_chat(req: ChatRequest) -> StreamingResponse:
         final_reply = ""
         try:
             async for step in run_agent(
-                req.message, groq_client, supabase, message_id, skills
+                req.message, gemini_model, supabase, message_id, skills
             ):
                 yield build_agent_event(step, conv_id)
                 if step.step_type == "answer":

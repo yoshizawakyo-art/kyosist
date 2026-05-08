@@ -51,7 +51,9 @@ class FileExecutor:
             return False, f"無効なパスです: {path}"
 
         allowed_prefixes = [self.ALLOWED_PREFIX, *self.EXTRA_ALLOWED_PREFIXES]
-        if not any(_is_relative_to(resolved_path, prefix) for prefix in allowed_prefixes):
+        if not any(
+            _is_relative_to(resolved_path, prefix) for prefix in allowed_prefixes
+        ):
             return False, f"パスは許可ルート外です: {self.ALLOWED_PREFIX}"
 
         return True, None

@@ -1,10 +1,16 @@
 # ペンディングタスク一覧
 
-最終更新: 2026-05-04
+最終更新: 2026-05-06
 
 ---
 
 ## ✅ 完了済み
+
+### チャット型自動実行スキル化
+- [x] `.codex/skills/automation-task-skillizer/SKILL.md` を追加し、チャット形式の作業説明からブラウザ操作・ローカルファイル操作を含む自律実行ワークフローと再利用可能 Skill を作れるようにした
+- [x] `.codex/skills/automation-task-skillizer/evals/evals.json` に browser+local、local-only、危険操作確認の 3 ケースを追加
+- [x] `.claude/skills/automation-task-skillizer/` に同等 Skill/evals を同期
+- [x] 欠落していた `.claude/doc/pending-tasks.md` を `.codex/doc/pending-tasks.md` と同期して復旧
 
 ### codex-invoke スキル最適化（iteration-2）
 - [x] 段階的タスク分割戦略を SKILL.md に追記

@@ -82,26 +82,20 @@ def _authenticate_user(client: Client, email: str, password: str) -> dict:
     user = find_user_by_email(client, email)
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail='Invalid email or password'
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Verify password
-    if not verify_password(password, user['password_hash']):
-        raise HTTPException(
-            status_code=401,
-            detail='Invalid email or password'
-        )
+    if not verify_password(password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # Generate JWT token (24 hour expiration)
-    token = generate_jwt_token(user['id'], user['email'], expires_in_hours=24)
+    token = generate_jwt_token(user["id"], user["email"], expires_in_hours=24)
 
     return {
-        'token': token,
-        'user_id': user['id'],
-        'email': user['email'],
-        'expires_in': 24 * 60 * 60,  # 24 hours in seconds
+        "token": token,
+        "user_id": user["id"],
+        "email": user["email"],
+        "expires_in": 24 * 60 * 60,  # 24 hours in seconds
     }
 
 
@@ -115,11 +109,11 @@ def register_login_endpoint(app: FastAPI, get_supabase_client) -> None:
     """
 
     @app.post(
-        '/api/auth/login',
+        "/api/auth/login",
         response_model=LoginResponse,
         responses={
-            401: {'model': LoginErrorResponse, 'description': 'Invalid credentials'},
-        }
+            401: {"model": LoginErrorResponse, "description": "Invalid credentials"},
+        },
     )
     async def login(request: LoginRequest) -> LoginResponse:
         """
@@ -140,10 +134,7 @@ def register_login_endpoint(app: FastAPI, get_supabase_client) -> None:
         try:
             client = get_supabase_client()
             result = await asyncio.to_thread(
-                _authenticate_user,
-                client,
-                request.email,
-                request.password
+                _authenticate_user, client, request.email, request.password
             )
             return LoginResponse(**result)
         except HTTPException:
@@ -151,12 +142,10 @@ def register_login_endpoint(app: FastAPI, get_supabase_client) -> None:
         except ValueError as exc:
             # JWT_SECRET_KEY not configured
             raise HTTPException(
-                status_code=500,
-                detail='Server configuration error'
+                status_code=500, detail="Server configuration error"
             ) from exc
         except Exception as exc:
             # Database or other unexpected error
             raise HTTPException(
-                status_code=500,
-                detail='Authentication service error'
+                status_code=500, detail="Authentication service error"
             ) from exc
