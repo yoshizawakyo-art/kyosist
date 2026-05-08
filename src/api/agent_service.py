@@ -383,13 +383,22 @@ async def run_agent(
 
         try:
             llm_output = await _call_gemini_with_retry(gemini_client, prompt)
-        except Exception as exc:
+        except Exception:
+            logger.exception("Gemini LLM call failed during agent run")
             error_step = AgentStep(
-                step_type="observation",
-                content=f"LLM エラー: {exc}",
+                step_type="answer",
+                content=(
+                    "AI応答の生成中にエラーが発生しました。"
+                    "しばらくしてから再度お試しください。"
+                ),
                 step_index=step_index,
             )
-            await asyncio.to_thread(_save_step, supabase_client, message_id, error_step)
+            try:
+                await asyncio.to_thread(
+                    _save_step, supabase_client, message_id, error_step
+                )
+            except Exception:
+                logger.exception("Failed to save LLM error step")
             yield error_step
             return
 
