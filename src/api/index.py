@@ -37,7 +37,6 @@ from typing import Literal, Optional
 from urllib.parse import urlparse
 
 import jwt
-import google.generativeai as genai
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -61,6 +60,11 @@ from api.agent_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+logger.info("=== ENVIRONMENT CHECK ===")
+logger.info("JWT_SECRET_KEY exists: %s", bool(os.environ.get("JWT_SECRET_KEY")))
+logger.info("VERCEL_ENV: %s", os.environ.get("VERCEL_ENV"))
+logger.info("========================")
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
