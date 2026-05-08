@@ -3,6 +3,7 @@ uvicorn[standard]
 supabase==2.15.0
 python-dotenv
 google-genai
+google-generativeai
 tavily-python
 httpx
 PyJWT==2.12.1
